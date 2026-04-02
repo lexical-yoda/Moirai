@@ -35,7 +35,7 @@ export function CalendarDay({ date, currentMonth, entry, onClick }: CalendarDayP
     <button
       onClick={() => onClick(dateStr)}
       className={cn(
-        "flex h-24 flex-col rounded-md border p-1.5 text-left transition-colors hover:bg-accent/50",
+        "flex h-16 sm:h-24 flex-col rounded-md border p-1 sm:p-1.5 text-left transition-colors hover:bg-accent/50",
         !inMonth && "opacity-30",
         today && "ring-2 ring-primary",
         entry && moodColor(entry.moodScore)
@@ -51,8 +51,9 @@ export function CalendarDay({ date, currentMonth, entry, onClick }: CalendarDayP
       </span>
       {entry && (
         <div className="mt-0.5 flex-1 overflow-hidden">
-          <p className="truncate text-xs font-medium">{entry.title || "Untitled"}</p>
-          <p className="text-[10px] text-muted-foreground">{entry.wordCount} words</p>
+          <p className="truncate text-xs font-medium hidden sm:block">{entry.title || "Untitled"}</p>
+          <p className="text-[10px] text-muted-foreground hidden sm:block">{entry.wordCount} words</p>
+          <span className="block sm:hidden h-1 w-1 rounded-full bg-primary mt-1" />
         </div>
       )}
     </button>

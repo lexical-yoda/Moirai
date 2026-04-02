@@ -259,22 +259,16 @@ export default function EntryPage() {
       {/* Main editor column */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-muted-foreground">{dateFormatted}</p>
-          <div className="flex items-center gap-2">
-            {saving && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" /> Saving...
-              </span>
-            )}
-            {saved && (
-              <span className="flex items-center gap-1 text-xs text-green-600">
-                <Check className="h-3 w-3" /> Saved
-              </span>
-            )}
-            <Badge variant="outline" className="text-xs">
-              {wordCount} words
-            </Badge>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{dateFormatted}</p>
+            <div className="flex items-center gap-1">
+              {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              {saved && <Check className="h-3 w-3 text-green-600" />}
+              <Badge variant="outline" className="text-xs">{wordCount}w</Badge>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto">
             <VoiceRecorder onTranscription={handleTranscription} />
             <TemplateSelector onSelect={handleTemplateSelect} />
             <VersionHistory entryId={entry?.id || ""} versions={versions} onRevert={handleRevert} />

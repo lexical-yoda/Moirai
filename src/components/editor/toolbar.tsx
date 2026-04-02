@@ -129,7 +129,7 @@ export function Toolbar({ editor }: ToolbarProps) {
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b p-1">
+    <div className="flex items-center gap-0.5 border-b p-1 overflow-x-auto">
       {items.map((item, i) => {
         if ("type" in item && item.type === "separator") {
           return <Separator key={i} orientation="vertical" className="mx-1 h-6" />;
