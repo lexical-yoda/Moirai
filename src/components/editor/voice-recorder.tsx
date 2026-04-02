@@ -43,7 +43,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
   }
 
   // Save recording to server (without transcription)
-  async function saveRecording(blob: Blob, transcription?: string) {
+  async function saveRecording(blob: Blob, opts?: { transcription?: string; skipAutoTranscribe?: boolean }) {
     setSaving(true);
     setError(null);
     try {
@@ -54,14 +54,16 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       form.append("file", blob, "recording.webm");
       form.append("entryId", resolvedId);
       form.append("duration", String(duration));
-      if (transcription) form.append("transcription", transcription);
+      if (opts?.transcription) form.append("transcription", opts.transcription);
+      if (opts?.skipAutoTranscribe) form.append("skipAutoTranscribe", "true");
 
       const res = await fetch("/api/voice/recordings", { method: "POST", body: form });
       if (!res.ok) throw new Error("Failed to save recording");
 
+      const result = await res.json();
       onRecordingSaved?.();
       toast.success("Recording saved");
-      return resolvedId;
+      return { entryId: resolvedId, recordingId: result.id as string };
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
       return null;
@@ -69,6 +71,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       setSaving(false);
     }
   }
+
 
   // Save first, then transcribe
   async function handleSaveAndTranscribe() {
@@ -78,14 +81,14 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
     setError(null);
 
     try {
-      // Save recording first so it's never lost
-      const resolvedId = await saveRecording(audioBlob);
-      if (!resolvedId) {
+      // Save recording first so it's never lost (skip auto-transcribe since we'll do it live)
+      const saveResult = await saveRecording(audioBlob, { skipAutoTranscribe: true });
+      if (!saveResult) {
         setTranscribing(false);
         return;
       }
 
-      // Now transcribe
+      // Now transcribe live
       const transcribeForm = new FormData();
       transcribeForm.append("file", audioBlob, "recording.webm");
 
@@ -103,7 +106,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       }
 
       const data = await res.json();
-      onTranscription(data.text, resolvedId);
+      onTranscription(data.text, saveResult.entryId);
       clearRecording();
     } catch (err) {
       toast.error("Transcription failed — recording was saved");
@@ -111,10 +114,10 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
     setTranscribing(false);
   }
 
-  // Save only (no transcription)
+  // Save only — background transcription will be queued automatically
   async function handleSaveOnly() {
     if (!audioBlob) return;
-    await saveRecording(audioBlob);
+    await saveRecording(audioBlob); // Server auto-queues transcription
     clearRecording();
   }
 
@@ -135,7 +138,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       return;
     }
 
-    await saveRecording(file);
+    await saveRecording(file); // Server auto-queues transcription
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
   }

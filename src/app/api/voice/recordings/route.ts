@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
   const entryId = formData.get("entryId") as string | null;
   const transcription = formData.get("transcription") as string | null;
   const duration = formData.get("duration") as string | null;
+  const skipAutoTranscribe = formData.get("skipAutoTranscribe") === "true";
 
   if (!file || !(file instanceof Blob)) {
     return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
@@ -109,6 +110,14 @@ export async function POST(request: NextRequest) {
     duration: duration ? parseFloat(duration) : null,
     createdAt: new Date(),
   });
+
+  // If no transcription provided and client isn't handling it, queue background transcription
+  if (!transcription && !skipAutoTranscribe) {
+    const { queueTask, processQueue } = await import("@/lib/processing/runner");
+    queueTask(session.user.id, entryId, "transcription", id)
+      .then(() => processQueue(session.user.id))
+      .catch((err) => console.error("[Voice] Failed to queue transcription:", err));
+  }
 
   return NextResponse.json({
     id,

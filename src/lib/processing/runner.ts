@@ -205,7 +205,7 @@ async function handleTranscription(task: TaskRecord) {
     .set({ transcription: text })
     .where(eq(voiceRecordings.id, task.recordingId));
 
-  // Append to entry content
+  // Append to entry content and queue AI pipeline
   if (task.entryId) {
     const entry = await db.query.entries.findFirst({ where: eq(entries.id, task.entryId) });
     if (entry) {
@@ -214,6 +214,16 @@ async function handleTranscription(task: TaskRecord) {
       await db.update(entries)
         .set({ content: newContent, updatedAt: new Date() })
         .where(eq(entries.id, task.entryId));
+
+      // Queue follow-up AI tasks (formatting, insights, embedding, therapy)
+      await queueTask(task.userId, task.entryId, "formatting");
+      await queueTask(task.userId, task.entryId, "insights");
+      await queueTask(task.userId, task.entryId, "embedding");
+
+      if (entry.hasTherapyNotes && entry.therapyContent &&
+          entry.therapyContent.replace(/<[^>]*>/g, " ").trim().length >= 10) {
+        await queueTask(task.userId, task.entryId, "therapy");
+      }
     }
   }
 }
