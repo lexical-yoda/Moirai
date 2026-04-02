@@ -13,6 +13,41 @@ async function getWhisperUrl(userId: string): Promise<string | null> {
   return settings?.whisperEndpointUrl || process.env.WHISPER_URL || null;
 }
 
+/**
+ * Try multiple Whisper API formats to support different servers:
+ * 1. Custom sidecar: POST /transcribe (file in form)
+ * 2. OpenAI-compatible: POST /v1/audio/transcriptions (file + model in form)
+ * 3. whisper-asr-webservice: POST /asr?task=transcribe (audio_file in form)
+ */
+async function tryTranscribe(baseUrl: string, file: Blob): Promise<Response> {
+  // Try custom sidecar format first
+  const form1 = new FormData();
+  form1.append("file", file);
+  try {
+    const res = await fetch(`${baseUrl}/transcribe`, { method: "POST", body: form1 });
+    if (res.ok) return res;
+  } catch {}
+
+  // Try whisper-asr-webservice format
+  const form2 = new FormData();
+  form2.append("audio_file", file);
+  try {
+    const res = await fetch(`${baseUrl}/asr?task=transcribe&output=json`, { method: "POST", body: form2 });
+    if (res.ok) return res;
+  } catch {}
+
+  // Try OpenAI format
+  const form3 = new FormData();
+  form3.append("file", file);
+  form3.append("model", "whisper-1");
+  try {
+    const res = await fetch(`${baseUrl}/v1/audio/transcriptions`, { method: "POST", body: form3 });
+    if (res.ok) return res;
+  } catch {}
+
+  throw new Error("All Whisper API formats failed");
+}
+
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
@@ -42,15 +77,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "File too large. Maximum 50MB." }, { status: 413 });
   }
 
-  const whisperForm = new FormData();
-  whisperForm.append("file", file);
-
   let whisperRes: Response;
   try {
-    whisperRes = await fetch(`${whisperUrl}/transcribe`, {
-      method: "POST",
-      body: whisperForm,
-    });
+    whisperRes = await tryTranscribe(whisperUrl, file);
   } catch {
     return NextResponse.json(
       { error: "Whisper service unavailable. Check the endpoint in Settings." },
@@ -58,30 +87,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!whisperRes.ok) {
-    const errorData = await whisperRes.json().catch(() => ({}));
-    return NextResponse.json(
-      { error: errorData.error || "Transcription failed" },
-      { status: whisperRes.status }
-    );
-  }
-
   let result;
   try {
     result = await whisperRes.json();
   } catch {
+    // Some servers return plain text
+    const text = await whisperRes.text().catch(() => "");
+    if (text) return NextResponse.json({ text, language: "unknown", duration: 0 });
     return NextResponse.json({ error: "Invalid response from Whisper service" }, { status: 502 });
   }
 
-  if (!result.text) {
+  // Handle different response formats
+  const text = result.text || result.transcript || "";
+  if (!text) {
     return NextResponse.json(
-      { error: "Invalid transcription response from Whisper service" },
+      { error: "Empty transcription from Whisper service" },
       { status: 502 }
     );
   }
 
   return NextResponse.json({
-    text: result.text,
+    text,
     language: result.language || "unknown",
     duration: result.duration || 0,
   });

@@ -178,36 +178,62 @@ ollama pull llama3.2
 
 ## Setting Up Voice Transcription (Whisper)
 
-Voice transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) via a lightweight FastAPI server. Recordings are saved and can be replayed from the entry page.
+Voice transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Recordings are saved and can be replayed from the entry page. Moirai auto-detects the Whisper API format, so any of these servers work.
 
-### Running the Whisper sidecar
+### Docker Compose (recommended)
 
-```bash
-# CPU-only
-cd whisper-sidecar
-pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 5000
+Using [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice):
 
-# With GPU acceleration (NVIDIA)
-DEVICE=cuda COMPUTE_TYPE=float16 uvicorn server:app --host 0.0.0.0 --port 5000
+```yaml
+# docker-compose.yml on your GPU/transcription machine
+services:
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    ports:
+      - "5000:9000"
+    environment:
+      - ASR_MODEL=base
+      - ASR_ENGINE=faster_whisper
+    restart: unless-stopped
 ```
 
-### Docker (standalone)
+For GPU acceleration:
+
+```yaml
+services:
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
+    ports:
+      - "5000:9000"
+    environment:
+      - ASR_MODEL=base
+      - ASR_ENGINE=faster_whisper
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    restart: unless-stopped
+```
 
 ```bash
-cd whisper-sidecar
-docker build -t moirai-whisper .
-docker run -d -p 5000:5000 \
-  -e MODEL_SIZE=base \
-  -e DEVICE=cuda \
-  -e COMPUTE_TYPE=float16 \
-  --gpus all \
-  moirai-whisper
+docker compose up -d
+```
+
+### Native (without Docker)
+
+```bash
+mkdir ~/whisper && cd ~/whisper
+python3 -m venv venv && source venv/bin/activate
+pip install faster-whisper fastapi uvicorn python-multipart requests
+
+# Copy whisper-sidecar/server.py from this repo, then:
+DEVICE=cpu COMPUTE_TYPE=int8 uvicorn server:app --host 0.0.0.0 --port 5000
 ```
 
 ### Configure in Moirai
 
-Go to **Settings > Voice Transcription**, enter the endpoint URL, and click **Test**.
+Go to **Settings > Voice Transcription**, enter `http://<machine-ip>:5000`, and click **Test**.
 
 ## Available Models
 

@@ -15,14 +15,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Endpoint URL required" });
   }
 
-  try {
-    const res = await fetch(`${endpointUrl}/health`, {
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return NextResponse.json({ ok: false, error: `HTTP ${res.status}` });
-    const data = await res.json().catch(() => ({}));
-    return NextResponse.json({ ok: true, modelLoaded: data.model_loaded ?? null });
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Connection failed" });
+  // Try multiple health check paths (different whisper servers use different endpoints)
+  const healthPaths = ["/health", "/docs", "/"];
+  for (const path of healthPaths) {
+    try {
+      const res = await fetch(`${endpointUrl}${path}`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        return NextResponse.json({ ok: true });
+      }
+    } catch {}
   }
+
+  return NextResponse.json({ ok: false, error: "Connection failed — server not reachable" });
 }
