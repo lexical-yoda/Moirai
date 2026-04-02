@@ -143,6 +143,7 @@ services:
       -m /models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
       --host 0.0.0.0
       --port 8080
+      --embeddings
       -ngl 99
       -c 4096
     restart: unless-stopped

@@ -220,7 +220,16 @@ export default function EntryPage() {
     handleChange(title, templateContent);
   }
 
-  function handleTranscription(text: string) {
+  function handleTranscription(text: string, newEntryId?: string) {
+    // If entry was just created by the voice recorder, update state
+    if (newEntryId && !entry) {
+      setEntry({ id: newEntryId, date, title: "", content: `<p>${text}</p>`, wordCount: 0, templateUsed: null });
+      setContent(`<p>${text}</p>`);
+      setEditorKey((k) => k + 1);
+      loadSidebarData(newEntryId);
+      return;
+    }
+
     // Escape HTML entities to prevent injection from transcription
     const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const newContent = content
@@ -292,8 +301,12 @@ export default function EntryPage() {
           <div className="flex items-center gap-1 overflow-x-auto">
             <VoiceRecorder
               entryId={entry?.id || null}
+              date={date}
               onTranscription={handleTranscription}
-              onRecordingSaved={() => entry && loadRecordings(entry.id)}
+              onRecordingSaved={() => {
+                const eid = entry?.id;
+                if (eid) loadRecordings(eid);
+              }}
             />
             <TemplateSelector onSelect={handleTemplateSelect} />
             <VersionHistory entryId={entry?.id || ""} versions={versions} onRevert={handleRevert} />
@@ -327,6 +340,17 @@ export default function EntryPage() {
             onRemoveTag={handleRemoveTag}
           />
         </div>
+
+        {/* Recordings — visible on all screen sizes */}
+        {entry && recordings.length > 0 && (
+          <RecordingsList
+            recordings={recordings}
+            onDelete={async (id) => {
+              await fetch(`/api/voice/recordings/${id}`, { method: "DELETE" });
+              setRecordings((prev) => prev.filter((r) => r.id !== id));
+            }}
+          />
+        )}
       </div>
 
       {/* Sidebar — insights, recordings, similar entries */}

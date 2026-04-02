@@ -7,7 +7,8 @@ import { Mic, Square, Loader2, Trash2, Send } from "lucide-react";
 
 interface VoiceRecorderProps {
   entryId: string | null;
-  onTranscription: (text: string) => void;
+  date: string;
+  onTranscription: (text: string, entryId: string) => void;
   onRecordingSaved?: () => void;
 }
 
@@ -17,7 +18,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function VoiceRecorder({ entryId, onTranscription, onRecordingSaved }: VoiceRecorderProps) {
+export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved }: VoiceRecorderProps) {
   const { isRecording, duration, audioBlob, audioUrl, startRecording, stopRecording, clearRecording } =
     useVoiceRecorder();
   const [transcribing, setTranscribing] = useState(false);
@@ -45,13 +46,29 @@ export function VoiceRecorder({ entryId, onTranscription, onRecordingSaved }: Vo
       }
 
       const data = await res.json();
-      onTranscription(data.text);
 
-      // Save recording to disk if entry exists
-      if (entryId) {
+      // Ensure entry exists before saving recording
+      let resolvedEntryId = entryId;
+      if (!resolvedEntryId) {
+        // Create entry with the transcribed text
+        const entryRes = await fetch("/api/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, title: "", content: `<p>${data.text}</p>` }),
+        });
+        if (entryRes.ok) {
+          const entryData = await entryRes.json();
+          resolvedEntryId = entryData.id;
+        }
+      }
+
+      onTranscription(data.text, resolvedEntryId || "");
+
+      // Save recording
+      if (resolvedEntryId) {
         const saveForm = new FormData();
         saveForm.append("file", audioBlob, "recording.webm");
-        saveForm.append("entryId", entryId);
+        saveForm.append("entryId", resolvedEntryId);
         saveForm.append("transcription", data.text);
         saveForm.append("duration", String(data.duration || duration));
 
