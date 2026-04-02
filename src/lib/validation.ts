@@ -28,12 +28,16 @@ const endpointUrlSchema = z.string().url().max(500).refine(
     if (process.env.NODE_ENV !== "production") return true;
     try {
       const parsed = new URL(url);
-      const isLocal = ["localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname)
-        || !parsed.hostname.includes(".");  // Docker service names like "whisper", "llama-server"
-      return isLocal || parsed.protocol === "https:";
+      // Allow HTTP for private/local IPs and Docker service names
+      const isPrivate = ["localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname)
+        || parsed.hostname.startsWith("10.")
+        || parsed.hostname.startsWith("192.168.")
+        || parsed.hostname.startsWith("172.")
+        || !parsed.hostname.includes(".");  // Docker service names
+      return isPrivate || parsed.protocol === "https:";
     } catch { return false; }
   },
-  { message: "HTTPS required for remote endpoints in production" }
+  { message: "HTTPS required for public endpoints in production" }
 );
 
 export const settingsSchema = z.object({
