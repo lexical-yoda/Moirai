@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MoodChart } from "@/components/dashboard/mood-chart";
 import { TopicCloud } from "@/components/dashboard/topic-cloud";
 import { RecentEntries } from "@/components/dashboard/recent-entries";
+import { MoodHeatmap } from "@/components/dashboard/mood-heatmap";
 import { PenLine, Calendar, TrendingUp, Flame, FileText, Loader2 } from "lucide-react";
 
 interface DashboardData {
@@ -16,6 +17,7 @@ interface DashboardData {
   moodTrend: { date: string; moodScore: number | null }[];
   topThemes: { name: string; count: number }[];
   recentEntries: { id: string; date: string; title: string; wordCount: number | null }[];
+  heatmapData: { date: string; moodScore: number | null }[];
 }
 
 function moodLabel(score: number | null): string {
@@ -52,7 +54,7 @@ export default function DashboardPage() {
   }
 
   const d = data || {
-    totalEntries: 0, monthEntries: 0, avgMood: null, streak: 0,
+    totalEntries: 0, monthEntries: 0, avgMood: null, streak: 0, heatmapData: [],
     totalWords: 0, moodTrend: [], topThemes: [], recentEntries: [],
   };
 
@@ -113,6 +115,8 @@ export default function DashboardPage() {
         <MoodChart data={d.moodTrend} />
         <TopicCloud themes={d.topThemes} />
       </div>
+
+      <MoodHeatmap data={d.heatmapData} />
 
       <RecentEntries entries={d.recentEntries} />
     </div>

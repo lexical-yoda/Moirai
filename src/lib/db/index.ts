@@ -99,6 +99,15 @@ function initializeTables(db: Database.Database) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS tags_user_name_idx ON tags(user_id, name);
 
+    CREATE TABLE IF NOT EXISTS entry_links (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      target_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS entry_links_unique_idx ON entry_links(source_entry_id, target_entry_id);
+
     CREATE TABLE IF NOT EXISTS entry_tags (
       entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
       tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE

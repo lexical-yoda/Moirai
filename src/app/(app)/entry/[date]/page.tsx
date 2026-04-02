@@ -10,6 +10,8 @@ import { TemplateSelector } from "@/components/editor/template-selector";
 import { VoiceRecorder } from "@/components/editor/voice-recorder";
 import { InsightsPanel } from "@/components/entry/insights-panel";
 import { SimilarEntries } from "@/components/entry/similar-entries";
+import { RecordingsList } from "@/components/entry/recordings-list";
+import { EntryLinks } from "@/components/entry/entry-links";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -73,6 +75,8 @@ export default function EntryPage() {
   const [insightLoading, setInsightLoading] = useState(false);
   const [similarEntries, setSimilarEntries] = useState<SimilarEntry[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
+  const [recordings, setRecordings] = useState<{ id: string; transcription: string | null; duration: number | null; createdAt: string }[]>([]);
+  const [linkedEntries, setLinkedEntries] = useState<{ id: string; date: string; title: string; wordCount: number | null; linkId: string }[]>([]);
   const [editorKey, setEditorKey] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
@@ -84,7 +88,21 @@ export default function EntryPage() {
     };
   }, []);
 
-  // Load insights and similar entries for an entry
+  async function loadRecordings(entryId: string) {
+    try {
+      const res = await fetch(`/api/voice/recordings?entryId=${entryId}`);
+      if (res.ok) setRecordings(await res.json());
+    } catch {}
+  }
+
+  async function loadLinks(entryId: string) {
+    try {
+      const res = await fetch(`/api/entries/${entryId}/links`);
+      if (res.ok) setLinkedEntries(await res.json());
+    } catch {}
+  }
+
+  // Load insights, similar entries, and recordings for an entry
   async function loadSidebarData(entryId: string) {
     setInsightLoading(true);
     setSimilarLoading(true);
@@ -93,6 +111,9 @@ export default function EntryPage() {
       fetch(`/api/entries/${entryId}/insights`).catch(() => null),
       fetch(`/api/entries/${entryId}/similar`).catch(() => null),
     ]);
+
+    loadRecordings(entryId);
+    loadLinks(entryId);
 
     if (insightRes?.ok) {
       const data = await insightRes.json();
@@ -269,7 +290,11 @@ export default function EntryPage() {
             </div>
           </div>
           <div className="flex items-center gap-1 overflow-x-auto">
-            <VoiceRecorder onTranscription={handleTranscription} />
+            <VoiceRecorder
+              entryId={entry?.id || null}
+              onTranscription={handleTranscription}
+              onRecordingSaved={() => entry && loadRecordings(entry.id)}
+            />
             <TemplateSelector onSelect={handleTemplateSelect} />
             <VersionHistory entryId={entry?.id || ""} versions={versions} onRevert={handleRevert} />
           </div>
@@ -304,10 +329,41 @@ export default function EntryPage() {
         </div>
       </div>
 
-      {/* Sidebar — insights & similar entries */}
+      {/* Sidebar — insights, recordings, similar entries */}
       {entry && (
         <aside className="hidden w-72 shrink-0 space-y-4 lg:block">
           <InsightsPanel insight={insight} loading={insightLoading} />
+          <EntryLinks
+            entryId={entry.id}
+            links={linkedEntries}
+            onLink={async (targetDate) => {
+              const res = await fetch(`/api/entries/${entry.id}/links`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetDate }),
+              });
+              if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "Failed to link");
+              }
+              loadLinks(entry.id);
+            }}
+            onUnlink={async (linkId) => {
+              await fetch(`/api/entries/${entry.id}/links`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ linkId }),
+              });
+              setLinkedEntries((prev) => prev.filter((l) => l.linkId !== linkId));
+            }}
+          />
+          <RecordingsList
+            recordings={recordings}
+            onDelete={async (id) => {
+              await fetch(`/api/voice/recordings/${id}`, { method: "DELETE" });
+              setRecordings((prev) => prev.filter((r) => r.id !== id));
+            }}
+          />
           <SimilarEntries entries={similarEntries} loading={similarLoading} />
         </aside>
       )}

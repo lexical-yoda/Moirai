@@ -107,6 +107,15 @@ export async function GET(request: NextRequest) {
     .where(eq(entries.userId, userId));
   const totalWords = wordResult[0]?.total || 0;
 
+  // Mood heatmap (last 365 days — date + mood score)
+  const yearAgo = format(subDays(now, 365), "yyyy-MM-dd");
+  const heatmapData = await db
+    .select({ date: entries.date, moodScore: insights.moodScore })
+    .from(entries)
+    .leftJoin(insights, eq(insights.entryId, entries.id))
+    .where(and(eq(entries.userId, userId), gte(entries.date, yearAgo)))
+    .orderBy(entries.date);
+
   return NextResponse.json({
     totalEntries,
     monthEntries,
@@ -116,5 +125,6 @@ export async function GET(request: NextRequest) {
     moodTrend,
     topThemes,
     recentEntries: recent,
+    heatmapData,
   });
 }

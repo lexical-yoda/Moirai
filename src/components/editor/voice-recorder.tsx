@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { Button } from "@/components/ui/button";
 import { Mic, Square, Loader2, Trash2, Send } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface VoiceRecorderProps {
+  entryId: string | null;
   onTranscription: (text: string) => void;
+  onRecordingSaved?: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -16,7 +17,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function VoiceRecorder({ onTranscription }: VoiceRecorderProps) {
+export function VoiceRecorder({ entryId, onTranscription, onRecordingSaved }: VoiceRecorderProps) {
   const { isRecording, duration, audioBlob, audioUrl, startRecording, stopRecording, clearRecording } =
     useVoiceRecorder();
   const [transcribing, setTranscribing] = useState(false);
@@ -29,12 +30,13 @@ export function VoiceRecorder({ onTranscription }: VoiceRecorderProps) {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, "recording.webm");
+      // Transcribe
+      const transcribeForm = new FormData();
+      transcribeForm.append("file", audioBlob, "recording.webm");
 
       const res = await fetch("/api/voice/transcribe", {
         method: "POST",
-        body: formData,
+        body: transcribeForm,
       });
 
       if (!res.ok) {
@@ -44,6 +46,19 @@ export function VoiceRecorder({ onTranscription }: VoiceRecorderProps) {
 
       const data = await res.json();
       onTranscription(data.text);
+
+      // Save recording to disk if entry exists
+      if (entryId) {
+        const saveForm = new FormData();
+        saveForm.append("file", audioBlob, "recording.webm");
+        saveForm.append("entryId", entryId);
+        saveForm.append("transcription", data.text);
+        saveForm.append("duration", String(data.duration || duration));
+
+        await fetch("/api/voice/recordings", { method: "POST", body: saveForm }).catch(() => {});
+        onRecordingSaved?.();
+      }
+
       clearRecording();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Transcription failed");
@@ -55,15 +70,9 @@ export function VoiceRecorder({ onTranscription }: VoiceRecorderProps) {
   return (
     <div className="flex items-center gap-2">
       {!isRecording && !audioBlob && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5"
-          onClick={startRecording}
-          title="Record voice note"
-        >
+        <Button variant="ghost" size="sm" className="gap-1.5" onClick={startRecording} title="Record voice note">
           <Mic className="h-4 w-4" />
-          Record
+          <span className="hidden sm:inline">Record</span>
         </Button>
       )}
 
@@ -74,50 +83,28 @@ export function VoiceRecorder({ onTranscription }: VoiceRecorderProps) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
             </span>
-            <span className="text-sm font-mono text-muted-foreground">
-              {formatDuration(duration)}
-            </span>
+            <span className="text-sm font-mono text-muted-foreground">{formatDuration(duration)}</span>
           </div>
           <Button variant="destructive" size="sm" className="gap-1.5" onClick={stopRecording}>
-            <Square className="h-3 w-3" />
-            Stop
+            <Square className="h-3 w-3" /> Stop
           </Button>
         </>
       )}
 
       {audioBlob && !isRecording && (
         <>
-          {audioUrl && (
-            <audio src={audioUrl} controls className="h-8 w-40" />
-          )}
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleTranscribe}
-            disabled={transcribing}
-          >
-            {transcribing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-            {transcribing ? "Transcribing..." : "Transcribe"}
+          {audioUrl && <audio src={audioUrl} controls className="h-8 w-32 sm:w-40" />}
+          <Button variant="default" size="sm" className="gap-1.5" onClick={handleTranscribe} disabled={transcribing}>
+            {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <span className="hidden sm:inline">{transcribing ? "Transcribing..." : "Transcribe"}</span>
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={clearRecording}
-            disabled={transcribing}
-            title="Discard recording"
-          >
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={clearRecording} disabled={transcribing} title="Discard recording">
             <Trash2 className="h-4 w-4" />
           </Button>
         </>
       )}
 
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && <span className="text-xs text-destructive max-w-32 truncate">{error}</span>}
     </div>
   );
 }

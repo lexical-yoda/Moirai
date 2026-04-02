@@ -131,6 +131,16 @@ export const entryTags = sqliteTable("entry_tags", {
   uniqueIndex("entry_tags_idx").on(table.entryId, table.tagId),
 ]);
 
+export const entryLinks = sqliteTable("entry_links", {
+  id: text("id").primaryKey(),
+  sourceEntryId: text("source_entry_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
+  targetEntryId: text("target_entry_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("entry_links_unique_idx").on(table.sourceEntryId, table.targetEntryId),
+]);
+
 export const voiceRecordings = sqliteTable("voice_recordings", {
   id: text("id").primaryKey(),
   entryId: text("entry_id").notNull().references(() => entries.id, { onDelete: "cascade" }),

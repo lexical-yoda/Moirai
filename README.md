@@ -1,21 +1,26 @@
 # Moirai
 
-A local-first, privacy-focused journaling app with optional AI-powered insights, voice-to-text, and semantic search. All data stays on your machine.
+A local-first, privacy-focused journaling app with optional AI-powered insights, voice-to-text, and semantic search. All data stays on your machine. Installable as a PWA.
 
 ## Features
 
 **Core (works standalone, no external services):**
 - Rich markdown editor with formatting toolbar
-- One entry per day with autosave
+- One entry per day with autosave (2s debounce)
 - Calendar view with mood-colored days
 - Full-text search (FTS5 with BM25 ranking)
 - Entry templates (gratitude, daily review, morning pages, weekly reflection)
 - Manual tagging with autocomplete
-- Entry version history with diff preview and revert
-- Multi-user with separate journals per account
-- Dark/light theme
+- Entry version history with preview and revert
+- Bi-directional entry linking (link related entries together)
+- Voice recording with persistent playback (multiple recordings per entry)
+- Multi-user with admin controls (first user is admin, registration lockdown)
+- Dark/light theme (including login/register pages)
+- Mood heatmap (GitHub-style year grid on dashboard)
 - Markdown export
-- Docker deployment with healthchecks
+- PWA support (installable on mobile and desktop)
+- Mobile-optimized with bottom tab navigation
+- Docker deployment with auto-migration and healthchecks
 
 **AI-Powered (configure in Settings):**
 - Mood analysis, theme extraction, action items, key people detection
@@ -26,12 +31,13 @@ A local-first, privacy-focused journaling app with optional AI-powered insights,
 
 ## Tech Stack
 
-- **Framework:** Next.js 15 (App Router, TypeScript)
-- **Database:** SQLite via Drizzle ORM + better-sqlite3
-- **Auth:** better-auth (credentials, sessions, rate-limited)
-- **UI:** Tailwind CSS + shadcn/ui + Radix/Base UI + Lucide icons
-- **Editor:** Tiptap with markdown extensions
+- **Framework:** Next.js 16 (App Router, TypeScript, Turbopack)
+- **Database:** SQLite via Drizzle ORM + better-sqlite3 (auto-migrating)
+- **Auth:** better-auth (credentials, sessions, rate-limited, admin roles)
+- **UI:** Tailwind CSS v4 + shadcn/ui (Base UI) + Lucide icons
+- **Editor:** Tiptap with task lists, highlights, code blocks
 - **Charts:** Recharts
+- **Fonts:** Syne (display) + DM Mono (monospace)
 - **AI:** Any OpenAI-compatible API (llama.cpp, Ollama, LM Studio, etc.)
 - **Voice:** faster-whisper via FastAPI sidecar
 
@@ -54,24 +60,64 @@ npm run db:push
 npm run dev
 ```
 
-Open http://localhost:3000, register an account, and start journaling.
+Open http://localhost:3000. The first account you create becomes admin.
 
 ### Docker
 
 ```bash
-# Create .env for Docker Compose
-cp .env.example .env
-# Edit .env — set BETTER_AUTH_SECRET
+# Create .env
+echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" > .env
 
-# Build and run
+# Pull and run (or docker compose up --build to build locally)
 docker compose up -d
 ```
 
-The app runs at http://localhost:3000. Data persists in a Docker volume.
+The app runs at http://localhost:3500. Database auto-initializes on first boot — no manual migration needed.
+
+### Behind a Reverse Proxy
+
+If exposing via nginx (e.g., `https://moirai.yourdomain.com`), set the URL in your `.env`:
+
+```env
+BETTER_AUTH_SECRET=<your-secret>
+BETTER_AUTH_URL=https://moirai.yourdomain.com
+NEXT_PUBLIC_BETTER_AUTH_URL=https://moirai.yourdomain.com
+```
+
+Example nginx config:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name moirai.yourdomain.com;
+
+    ssl_certificate     /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    client_max_body_size 50M;
+
+    location / {
+        proxy_pass http://<internal-ip>:3500;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## Admin System
+
+The first user to register automatically becomes admin. Registration closes after the first signup.
+
+**Admin controls (Settings > Administration):**
+- Open/close registration
+- View all users
+- Delete non-admin users
 
 ## Setting Up AI Services
 
-The app works fully without AI. To enable AI features, configure the endpoints in **Settings** after logging in. Each integration has a **Test** button to verify connectivity.
+The app works fully without AI. To enable AI features, configure endpoints in **Settings** after logging in. Each integration has a **Test** button to verify connectivity.
 
 ### llama.cpp (recommended for self-hosting)
 
@@ -86,18 +132,17 @@ llama-server \
   --port 8080 \
   --embeddings \
   --ctx-size 4096 \
-  --n-gpu-layers 99  # Offload all layers to GPU
+  --n-gpu-layers 99
 
-# 3. In Moirai Settings:
+# 3. In Moirai Settings > AI/LLM:
 #    Provider: llama-server
 #    Endpoint: http://<machine-ip>:8080
-#    Click Test to verify
+#    Click Test
 ```
 
-For embeddings/semantic search, llama-server serves both chat and embeddings from the same model when started with `--embeddings`. For better results, use a dedicated embedding model:
+For better semantic search, run a dedicated embedding model:
 
 ```bash
-# Run a second instance for embeddings
 llama-server \
   --model /path/to/nomic-embed-text-v1.5.Q8_0.gguf \
   --host 0.0.0.0 \
@@ -112,11 +157,10 @@ llama-server \
 ### Ollama
 
 ```bash
-# 1. Install Ollama: https://ollama.com
 ollama serve
 ollama pull llama3.2
 
-# 2. In Moirai Settings:
+# In Moirai Settings:
 #    Provider: Ollama
 #    Endpoint: http://<machine-ip>:11434
 #    Model: llama3.2
@@ -125,17 +169,16 @@ ollama pull llama3.2
 ### LM Studio
 
 ```bash
-# 1. Download and run LM Studio: https://lmstudio.ai
-# 2. Load a model and start the local server (default port 1234)
+# Start LM Studio, load a model, start local server (default port 1234)
 
-# 3. In Moirai Settings:
+# In Moirai Settings:
 #    Provider: LM Studio
 #    Endpoint: http://localhost:1234
 ```
 
 ## Setting Up Voice Transcription (Whisper)
 
-Voice transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) via a lightweight FastAPI server.
+Voice transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) via a lightweight FastAPI server. Recordings are saved and can be replayed from the entry page.
 
 ### Running the Whisper sidecar
 
@@ -148,8 +191,6 @@ uvicorn server:app --host 0.0.0.0 --port 5000
 # With GPU acceleration (NVIDIA)
 DEVICE=cuda COMPUTE_TYPE=float16 uvicorn server:app --host 0.0.0.0 --port 5000
 ```
-
-The first startup downloads the Whisper model (~150MB for `base`). Use `MODEL_SIZE=medium` or `MODEL_SIZE=large-v3` for better accuracy.
 
 ### Docker (standalone)
 
@@ -166,11 +207,7 @@ docker run -d -p 5000:5000 \
 
 ### Configure in Moirai
 
-Go to **Settings > Voice Transcription** and set:
-- Endpoint: `http://<machine-ip>:5000`
-- Click **Test** to verify
-
-Then use the **Record** button on any entry page to record and transcribe voice notes.
+Go to **Settings > Voice Transcription**, enter the endpoint URL, and click **Test**.
 
 ## Available Models
 
@@ -188,38 +225,33 @@ Then use the **Record** button on any entry page to record and transcribe voice 
 ```
 src/
   app/
-    (auth)/          Login, register (no sidebar)
-    (app)/           Authenticated pages (with sidebar)
-      entry/[date]/  Journal editor with autosave
-      calendar/      Monthly calendar view
-      search/        Keyword + semantic search
-      reflections/   AI-generated weekly/monthly reflections
-      settings/      Integration configuration
-    api/             API routes (entries, tags, insights, etc.)
+    (auth)/              Login, register (with theme toggle)
+    (app)/               Authenticated pages
+      entry/[date]/      Journal editor with autosave
+      calendar/          Monthly calendar view
+      search/            Keyword + semantic search
+      reflections/       AI-generated reflections
+      settings/          Integrations + admin panel
+    api/
+      admin/             Registration control, user management
+      entries/           CRUD, versions, insights, links, similar
+      voice/             Transcribe, recordings, file serving
+      reflections/       Generate, list, detail
+      search/            FTS5 keyword + semantic
+      settings/          User settings, test endpoints
+      health/            Liveness check
   components/
-    editor/          Tiptap editor, toolbar, voice recorder, tags, versions
-    layout/          Sidebar, header, theme toggle, service status
-    entry/           Insights panel, similar entries
-    dashboard/       Mood chart, topic cloud, recent entries
-    reflections/     Reflection cards, generate dialog
+    editor/              MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
+    layout/              Sidebar, BottomNav, Header, ThemeToggle, ServiceStatus
+    entry/               InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
+    dashboard/           MoodChart, MoodHeatmap, TopicCloud, RecentEntries
+    reflections/         ReflectionCard, GenerateReflection
   lib/
-    db/              Drizzle schema, SQLite connection, FTS5 migrations
-    auth/            better-auth config, session helpers
-    ai/              AI client, prompts, extraction, embeddings, reflections
-whisper-sidecar/     FastAPI + faster-whisper server
+    db/                  Schema, connection (auto-migrating), FTS5
+    auth/                better-auth config, session helpers
+    ai/                  Client, prompts, extraction, embeddings, reflections
+whisper-sidecar/         FastAPI + faster-whisper server
 ```
-
-## NPM Scripts
-
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npm run db:push` | Push schema changes to SQLite |
-| `npm run db:generate` | Generate Drizzle migration |
-| `npm run db:studio` | Open Drizzle Studio (DB browser) |
-| `npm run lint` | Run ESLint |
 
 ## Environment Variables
 
@@ -227,10 +259,9 @@ whisper-sidecar/     FastAPI + faster-whisper server
 |----------|----------|---------|-------------|
 | `BETTER_AUTH_SECRET` | Yes | — | Session signing secret (min 32 chars) |
 | `BETTER_AUTH_URL` | No | `http://localhost:3000` | App URL (set if behind reverse proxy) |
-| `NEXT_PUBLIC_BETTER_AUTH_URL` | No | `http://localhost:3000` | Public app URL |
 | `DATABASE_PATH` | No | `./data/moirai.db` | SQLite database path |
 
-AI and Whisper endpoints are configured per-user in the Settings page, not via environment variables.
+AI, embeddings, and Whisper endpoints are configured per-user in the Settings page.
 
 ## License
 

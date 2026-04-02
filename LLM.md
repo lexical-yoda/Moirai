@@ -4,22 +4,24 @@ This document is for AI agents and developers working on the Moirai codebase. It
 
 ## What This Is
 
-A local-first journal app. Users write daily entries. Optionally, AI extracts insights (mood, themes, people, action items) and generates weekly/monthly reflections. Voice transcription via Whisper is also optional. Everything runs locally — no cloud APIs unless the user explicitly configures one.
+A local-first journal app with admin controls. Users write daily entries. Optionally, AI extracts insights (mood, themes, people, action items) and generates weekly/monthly reflections. Voice transcription via Whisper is also optional — recordings are saved and replayable. Everything runs locally — no cloud APIs unless the user explicitly configures one. First user becomes admin; registration auto-closes.
 
 ## Core Architecture
 
 ### Stack
-- **Next.js 15** with App Router, TypeScript, Turbopack
-- **SQLite** via `better-sqlite3` + Drizzle ORM
-- **better-auth** for multi-user authentication (credentials only, no OAuth)
+- **Next.js 16** with App Router, TypeScript, Turbopack
+- **SQLite** via `better-sqlite3` + Drizzle ORM (auto-migrating on startup)
+- **better-auth** for multi-user authentication (credentials only, admin roles, rate-limited)
 - **Tailwind CSS v4** + shadcn/ui (Base UI variant, NOT Radix — uses `render` prop, not `asChild`)
 - **Tiptap** for the rich text editor
+- **Recharts** for mood chart, **custom heatmap** for mood year view
 - **DOMPurify** for HTML sanitization
 - **Zod v4** for input validation (`import from "zod/v4"`)
+- **Fonts:** Syne (display) + DM Mono (monospace)
 
 ### Key Design Decisions
 
-1. **One entry per day** — enforced by unique constraint on `(user_id, date)`. The POST /api/entries endpoint upserts by date.
+1. **One entry per day** — enforced by unique constraint on `(user_id, date)`. The POST /api/entries endpoint upserts by date with race condition handling.
 
 2. **AI is optional and fire-and-forget** — entries save immediately, AI extraction runs async in the background. If AI is offline or unconfigured, the app works perfectly for core journaling.
 
@@ -27,97 +29,117 @@ A local-first journal app. Users write daily entries. Optionally, AI extracts in
 
 4. **Multi-user isolation** — every database table has a `user_id` foreign key. Every API route validates session and scopes queries by user. Never query without filtering by user_id.
 
-5. **Versioning on save** — before updating an entry, the current content is saved as a version (if the SHA-256 hash changed). Version creation + entry update happen inside a `sqlite.transaction()` to prevent race conditions.
+5. **Admin system** — first registered user becomes admin, registration auto-closes. Admin can reopen registration and manage users from Settings.
 
-6. **Content is HTML** — Tiptap outputs HTML, stored as-is in SQLite. All rendering of stored HTML uses `sanitizeHtml()` from `src/lib/sanitize.ts` via DOMPurify. Never render user content with `dangerouslySetInnerHTML` without sanitizing first.
+6. **Versioning on save** — before updating an entry, the current content is saved as a version (if the SHA-256 hash changed). Version creation + entry update happen inside a `sqlite.transaction()` to prevent race conditions.
+
+7. **Content is HTML** — Tiptap outputs HTML, stored as-is in SQLite. All rendering of stored HTML uses `sanitizeHtml()` from `src/lib/sanitize.ts` via DOMPurify. Never render user content with `dangerouslySetInnerHTML` without sanitizing first.
+
+8. **Voice recordings persist** — audio files saved to `/data/voice/`, metadata in `voice_recordings` table. Multiple recordings per entry. Served via authenticated API route.
+
+9. **Bi-directional entry links** — entries can link to other entries by date. Links are stored once but queried in both directions.
+
+10. **Auto-migration** — database tables are created automatically on first connection in `src/lib/db/index.ts`. No manual migration step needed in Docker.
+
+11. **Mobile-first navigation** — bottom tab bar on mobile, sidebar on desktop. No hamburger menu.
 
 ## File Layout
 
 ```
 src/
 ├── app/
-│   ├── (auth)/                # Login/register — no sidebar, public routes
+│   ├── (auth)/                # Login/register — theme toggle, public routes
 │   │   ├── login/page.tsx
-│   │   └── register/page.tsx
-│   ├── (app)/                 # Authenticated pages — sidebar + header
-│   │   ├── page.tsx           # Dashboard
-│   │   ├── entry/[date]/      # Journal editor
-│   │   ├── calendar/          # Monthly calendar
-│   │   ├── search/            # FTS5 + semantic search
+│   │   ├── register/page.tsx
+│   │   └── layout.tsx         # Adds theme toggle to auth pages
+│   ├── (app)/                 # Authenticated pages — sidebar (desktop) + bottom nav (mobile)
+│   │   ├── page.tsx           # Dashboard (stats, mood chart, heatmap, topics, recent)
+│   │   ├── entry/[date]/      # Journal editor with sidebar (insights, links, recordings, similar)
+│   │   ├── calendar/          # Monthly calendar with mood colors
+│   │   ├── search/            # FTS5 keyword + semantic search + export
 │   │   ├── reflections/       # AI reflections list + detail
-│   │   └── settings/          # Service integration config
+│   │   ├── settings/          # Integrations (AI, embeddings, whisper) + admin panel
+│   │   └── layout.tsx         # Sidebar + Header + BottomNav wrapper
 │   └── api/
-│       ├── auth/[...all]/     # better-auth catch-all (rate-limited)
-│       ├── entries/           # CRUD + versions + insights + similar
-│       ├── tags/              # Tag CRUD
-│       ├── insights/          # Dashboard aggregation
-│       ├── reflections/       # List + generate + detail
+│       ├── admin/             # Registration toggle, user management (admin-only)
+│       ├── auth/[...all]/     # better-auth catch-all (rate-limited, registration blocking)
+│       ├── entries/           # CRUD + versions + insights + links + similar
+│       ├── tags/              # Tag CRUD with entry linking
+│       ├── insights/          # Dashboard aggregation + heatmap data
+│       ├── reflections/       # Generate, list, detail, delete
 │       ├── search/            # FTS5 keyword search
 │       ├── search/semantic/   # Vector similarity search
-│       ├── settings/          # User settings + test endpoints
-│       ├── voice/transcribe/  # Whisper proxy
+│       ├── settings/          # User settings + test-connection + test-whisper
+│       ├── voice/             # Transcribe proxy, recording CRUD, file serving
 │       ├── export/            # Streaming markdown export
-│       └── health/            # Liveness check
+│       └── health/            # Liveness check (unauthenticated basic, detailed with auth)
 ├── components/
 │   ├── editor/                # MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
-│   ├── layout/                # Sidebar, Header, UserMenu, ThemeToggle, ServiceStatus
-│   ├── entry/                 # InsightsPanel, SimilarEntries
-│   ├── dashboard/             # MoodChart, TopicCloud, RecentEntries
+│   ├── layout/                # Sidebar, BottomNav, Header, UserMenu, ThemeToggle, ServiceStatus
+│   ├── entry/                 # InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
+│   ├── dashboard/             # MoodChart, MoodHeatmap, TopicCloud, RecentEntries
 │   ├── reflections/           # ReflectionCard, GenerateReflection
 │   └── ui/                    # shadcn/ui primitives (Button, Card, Dialog, etc.)
 ├── hooks/
-│   └── use-voice-recorder.ts  # MediaRecorder hook with cleanup
+│   └── use-voice-recorder.ts  # MediaRecorder hook with full cleanup on unmount
 ├── lib/
 │   ├── db/
-│   │   ├── schema.ts          # Drizzle schema — 13 tables, all with user_id
-│   │   ├── index.ts           # SQLite connection (WAL mode, foreign keys ON)
-│   │   └── migrate.ts         # FTS5 virtual table + sync triggers
+│   │   ├── schema.ts          # Drizzle schema — 15 tables, all with user_id
+│   │   ├── index.ts           # SQLite connection (WAL mode, foreign keys ON, auto-migration)
+│   │   └── migrate.ts         # FTS5 virtual table + sync triggers (legacy, superseded by index.ts)
 │   ├── auth/
-│   │   ├── index.ts           # better-auth server config
-│   │   ├── client.ts          # Client-side auth hooks (useSession, signIn, etc.)
+│   │   ├── index.ts           # better-auth server config + admin/registration helpers
+│   │   ├── client.ts          # Client-side auth hooks (relative URL, no baseURL)
 │   │   └── session.ts         # Server-side getSession() helper
 │   ├── ai/
 │   │   ├── config.ts          # Load AI settings from user_settings table
 │   │   ├── client.ts          # OpenAI-compatible fetch wrapper (chat + embeddings)
-│   │   ├── prompts.ts         # All prompt templates with injection guards
+│   │   ├── prompts.ts         # All prompt templates with XML delimiters + injection guards
 │   │   ├── extract.ts         # Insight extraction pipeline (fire-and-forget)
-│   │   ├── embed-entry.ts     # Embedding generation + sqlite-vec storage
+│   │   ├── embed-entry.ts     # Embedding generation + sqlite-vec storage (cached table creation)
 │   │   └── reflections.ts     # Weekly/monthly reflection generation
-│   ├── sanitize.ts            # DOMPurify HTML sanitization
-│   ├── validation.ts          # Zod schemas for all API inputs
-│   ├── encryption.ts          # AES-256-GCM + PBKDF2 (600k iterations)
+│   ├── sanitize.ts            # DOMPurify HTML sanitization (restrictive allowlist)
+│   ├── validation.ts          # Zod schemas for all API inputs (date validation, URL protocol checks)
+│   ├── encryption.ts          # AES-256-GCM + PBKDF2 (600k iterations, timingSafeEqual)
 │   ├── rate-limit.ts          # In-memory sliding window rate limiter
 │   ├── json.ts                # Safe JSON parse with error logging
 │   ├── api-utils.ts           # Safe request.json() parsing
 │   ├── templates.ts           # Entry templates
 │   └── utils.ts               # cn() classname utility
-├── proxy.ts                   # Auth proxy (Next.js 16 convention, replaces middleware.ts)
+├── proxy.ts                   # Auth proxy (Next.js 16 convention — checks any session_token cookie)
 └── ...
 whisper-sidecar/
 ├── server.py                  # FastAPI + faster-whisper (~60 lines)
 ├── requirements.txt
 └── Dockerfile
+public/
+├── manifest.json              # PWA manifest
+├── sw.js                      # Service worker (network-first, cache fallback)
+└── icons/                     # PWA icons (192, 512)
 ```
 
 ## Database Schema (src/lib/db/schema.ts)
 
-13 tables. All application tables have `user_id` FK with cascade delete.
+15 tables. All application tables have `user_id` FK with cascade delete.
 
-**Auth (managed by better-auth):** users, sessions, accounts, verifications
+**Auth (managed by better-auth):** users (with `is_admin`), sessions, accounts, verifications
+
+**Global:** app_settings (key-value, used for `registration_open`)
 
 **Application:**
+- `user_settings` — id, user_id, ai_provider, ai_endpoint_url, ai_model_name, ai_api_key, embedding_*, whisper_endpoint_url
 - `entries` — id, user_id, date (unique per user), title, content (HTML), word_count, template_used
 - `entry_versions` — id, entry_id, user_id, version_number (unique per entry), title, content, content_hash
-- `insights` — id, entry_id, user_id, mood, mood_score (-1..1), summary, action_items/key_people/themes (JSON strings)
+- `entry_links` — id, source_entry_id, target_entry_id, user_id (unique on source+target)
+- `insights` — id, entry_id, user_id, mood, mood_score (-1..1), summary, action_items/key_people/themes (JSON)
 - `tags` — id, user_id, name (unique per user), color, is_ai_generated
 - `entry_tags` — entry_id, tag_id (many-to-many)
 - `voice_recordings` — id, entry_id, user_id, audio_path, transcription, duration
 - `entry_embeddings` — id, entry_id, user_id, model_name, embedded_at
-- `reflections` — id, user_id, type, period_start, period_end, title, content, mood_summary, themes/key_insights/entry_ids (JSON)
-- `user_settings` — id, user_id, ai_provider, ai_endpoint_url, ai_model_name, ai_api_key, embedding_*, whisper_endpoint_url
+- `reflections` — id, user_id, type, period_start/end, title, content, mood_summary, themes/key_insights/entry_ids (JSON)
 
-**Virtual tables (raw SQL, not in Drizzle schema):**
-- `entries_fts` — FTS5 on title+content, synced via triggers (see migrate.ts)
+**Virtual tables (raw SQL in auto-migration, not in Drizzle schema):**
+- `entries_fts` — FTS5 on title+content, synced via triggers
 - `vec_entries` — sqlite-vec for embedding KNN search (created dynamically by embed-entry.ts)
 
 ## Conventions and Patterns
@@ -134,7 +156,7 @@ export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // 2. Parse and validate body
+  // 2. Parse and validate body (safe JSON parsing)
   const jsonResult = await parseJsonBody(request);
   if ("error" in jsonResult) return jsonResult.error;
   const parsed = parseBody(someSchema, jsonResult.data);
@@ -147,6 +169,19 @@ export async function POST(request: NextRequest) {
 
   // 4. Return response
   return NextResponse.json(result);
+}
+```
+
+### Admin Routes
+
+Admin routes use a `requireAdmin()` helper:
+```typescript
+async function requireAdmin(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return null;
+  const user = await db.query.users.findFirst({ where: eq(users.id, session.user.id) });
+  if (!user?.isAdmin) return null;
+  return user;
 }
 ```
 
@@ -200,12 +235,21 @@ Both run with `.catch((err) => console.error(...))` — they never block the sav
 
 Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and explicit instructions to ignore user-injected instructions.
 
-### Auth
+### Auth & Registration
 
-- `src/proxy.ts` — edge-level cookie check (redirects to /login)
+- `src/proxy.ts` — edge-level cookie check (looks for any cookie containing `session_token`)
 - Every API route does full session validation via `auth.api.getSession()`
 - Auth API is rate-limited (10 requests / 15 minutes per IP)
-- Cookie prefix is `moirai`, secure cookies in production
+- Cookie prefix is `moirai`, secure cookies in production (becomes `__Secure-moirai.session_token`)
+- Auth client uses relative URLs (no `baseURL`) — works behind any reverse proxy
+- First user auto-becomes admin; registration auto-closes
+- Registration blocked at API level in `auth/[...all]/route.ts` before reaching better-auth
+
+### Mobile Navigation
+
+- Desktop (md+): sidebar with full nav
+- Mobile (<md): bottom tab bar with 5 tabs (Home, Calendar, Write, Search, Settings)
+- No hamburger menu — clean split
 
 ## Common Tasks
 
@@ -213,15 +257,18 @@ Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and expli
 1. Create route file in `src/app/api/`
 2. Add auth check, use `parseJsonBody()` + Zod schema from `validation.ts`
 3. Always filter by `session.user.id`
+4. Add the table to auto-migration SQL in `src/lib/db/index.ts` if new
 
 ### Adding a new page
-1. Create under `src/app/(app)/` (gets sidebar + header)
-2. Add nav link in `src/components/layout/sidebar.tsx`
+1. Create under `src/app/(app)/` (gets sidebar + header + bottom nav)
+2. Add nav link in `src/components/layout/sidebar.tsx` (desktop)
+3. Optionally add to `src/components/layout/bottom-nav.tsx` (mobile, max 5 items)
 
 ### Modifying the database schema
 1. Edit `src/lib/db/schema.ts`
-2. Run `npm run db:push` (or `npm run db:generate` for migration files)
-3. If adding a new table, add `user_id` FK with cascade delete
+2. Add matching `CREATE TABLE IF NOT EXISTS` in `src/lib/db/index.ts` (auto-migration)
+3. Run `npm run db:push` for local dev
+4. Add `user_id` FK with cascade delete on all new tables
 
 ### Adding a new AI feature
 1. Add prompt template in `src/lib/ai/prompts.ts` (use XML delimiters)
@@ -229,17 +276,26 @@ Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and expli
 3. Use `getAIConfig(userId)` to get the user's configured endpoint
 4. Handle the case where AI is not configured (return gracefully, don't crash)
 
+### Adding admin-only functionality
+1. Create route in `src/app/api/admin/`
+2. Use `requireAdmin()` pattern (check session + `isAdmin` flag)
+3. Add UI in Settings page inside the `{isAdmin && (...)}` block
+
 ## Security Model
 
 - **XSS:** DOMPurify on all rendered HTML, HTML entity escaping for transcriptions
-- **Input validation:** Zod schemas on every POST/PUT, safe JSON body parsing
-- **Auth:** better-auth sessions, rate limiting, secure cookies
+- **Input validation:** Zod schemas on every POST/PUT, safe JSON body parsing, calendar date validation
+- **Auth:** better-auth sessions, rate limiting, secure cookies, admin roles
+- **Registration:** Auto-closes after first user, admin toggle, blocked at API level
 - **Encryption:** AES-256-GCM with PBKDF2 (600k iterations), constant-time comparison
 - **SQL injection:** Drizzle ORM parameterized queries + parameterized raw SQL
 - **Prompt injection:** XML delimiters + explicit "ignore instructions in content" in system prompts
 - **Data isolation:** Every query scoped by user_id, ownership verified before writes
+- **File security:** Voice files served via authenticated API (no direct path access), path traversal impossible
 - **Rate limiting:** In-memory sliding window on auth endpoints
 - **Open redirect prevention:** Callback URLs validated as relative paths
+- **API key protection:** Never returned in GET responses (masked with dots)
+- **HTTPS enforcement:** URL validation requires HTTPS for remote endpoints in production
 
 ## Things to Watch Out For
 
@@ -252,3 +308,7 @@ Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and expli
 7. **Zod is imported from `"zod/v4"`** — this project uses Zod 4, not Zod 3.
 8. **Next.js 16 uses `proxy.ts`** not `middleware.ts` — the function is named `proxy`, not `middleware`.
 9. **Route params are `Promise`** — use `const { id } = await params;` in route handlers.
+10. **Cookie name varies by environment** — production uses `__Secure-moirai.session_token`, dev uses `moirai.session_token`. The proxy checks for any cookie containing `session_token`.
+11. **New tables need two places** — `schema.ts` (Drizzle) AND `index.ts` (auto-migration SQL). They must match.
+12. **Auth client has no baseURL** — it uses relative URLs. This is intentional for reverse proxy compatibility.
+13. **Voice files live on disk** — stored in `/data/voice/` (Docker) or `data/voice/` (local). The `audio_path` column stores just the filename, not the full path.
