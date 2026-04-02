@@ -32,7 +32,10 @@ const endpointUrlSchema = z.string().url().max(500).refine(
       const isPrivate = ["localhost", "127.0.0.1", "0.0.0.0"].includes(parsed.hostname)
         || parsed.hostname.startsWith("10.")
         || parsed.hostname.startsWith("192.168.")
-        || parsed.hostname.startsWith("172.")
+        || (parsed.hostname.startsWith("172.") && (() => {
+            const second = parseInt(parsed.hostname.split(".")[1]);
+            return second >= 16 && second <= 31;
+          })())
         || !parsed.hostname.includes(".");  // Docker service names
       return isPrivate || parsed.protocol === "https:";
     } catch { return false; }

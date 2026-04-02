@@ -4,7 +4,8 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, Trash2, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, Trash2, Download, Send, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { toast } from "sonner";
 
 interface Recording {
   id: string;
@@ -16,6 +17,7 @@ interface Recording {
 interface RecordingsListProps {
   recordings: Recording[];
   onDelete: (id: string) => void;
+  onTranscribed?: (id: string, text: string) => void;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -37,12 +39,32 @@ async function downloadRecording(id: string, date: string) {
   URL.revokeObjectURL(url);
 }
 
-export function RecordingsList({ recordings, onDelete }: RecordingsListProps) {
+export function RecordingsList({ recordings, onDelete, onTranscribed }: RecordingsListProps) {
   const [expanded, setExpanded] = useState(false);
+  const [transcribingId, setTranscribingId] = useState<string | null>(null);
 
   if (recordings.length === 0) return null;
 
   const visible = expanded ? recordings : recordings.slice(0, 2);
+
+  async function handleTranscribe(id: string) {
+    setTranscribingId(id);
+    try {
+      const res = await fetch(`/api/voice/recordings/${id}/transcribe`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Transcription failed");
+        return;
+      }
+      const data = await res.json();
+      toast.success("Transcription complete");
+      onTranscribed?.(id, data.text);
+    } catch {
+      toast.error("Transcription failed");
+    } finally {
+      setTranscribingId(null);
+    }
+  }
 
   return (
     <Card>
@@ -62,6 +84,21 @@ export function RecordingsList({ recordings, onDelete }: RecordingsListProps) {
                 </span>
               </div>
               <div className="flex items-center gap-0.5">
+                {!rec.transcription && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => handleTranscribe(rec.id)}
+                    disabled={transcribingId === rec.id}
+                    title="Transcribe recording"
+                  >
+                    {transcribingId === rec.id
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <Send className="h-3 w-3" />
+                    }
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

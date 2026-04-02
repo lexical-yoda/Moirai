@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Check, Loader2, Trash2 } from "lucide-react";
-import { sanitizeHtml } from "@/lib/sanitize";
 import { toast } from "sonner";
 
 interface Entry {
@@ -401,6 +400,10 @@ export default function EntryPage() {
               await fetch(`/api/voice/recordings/${id}`, { method: "DELETE" });
               setRecordings((prev) => prev.filter((r) => r.id !== id));
             }}
+            onTranscribed={(_id, text) => {
+              handleTranscription(text);
+              if (entry?.id) loadRecordings(entry.id);
+            }}
           />
         )}
 
@@ -470,6 +473,10 @@ export default function EntryPage() {
             onDelete={async (id) => {
               await fetch(`/api/voice/recordings/${id}`, { method: "DELETE" });
               setRecordings((prev) => prev.filter((r) => r.id !== id));
+            }}
+            onTranscribed={(_id, text) => {
+              handleTranscription(text);
+              if (entry?.id) loadRecordings(entry.id);
             }}
           />
           <SimilarEntries entries={similarEntries} loading={similarLoading} />

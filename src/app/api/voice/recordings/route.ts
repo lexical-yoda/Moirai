@@ -81,8 +81,13 @@ export async function POST(request: NextRequest) {
   ensureVoiceDir();
 
   const id = nanoid();
-  const ext = file.type.includes("webm") ? "webm" : "ogg";
-  const filename = `${id}.${ext}`;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  // Determine extension from filename or MIME type
+  const originalName = (file as File).name || "";
+  const extFromName = originalName.split(".").pop()?.toLowerCase();
+  const validExts = ["webm", "ogg", "mp3", "wav", "m4a", "flac", "opus", "aac", "wma"];
+  const ext = (extFromName && validExts.includes(extFromName)) ? extFromName : (file.type.includes("webm") ? "webm" : "ogg");
+  const filename = `${timestamp}_${id}.${ext}`;
   const filePath = path.join(VOICE_DIR, filename);
 
   // Write file to disk

@@ -29,7 +29,13 @@ export async function GET(
   }
 
   const buffer = fs.readFileSync(filePath);
-  const contentType = recording.audioPath.endsWith(".webm") ? "audio/webm" : "audio/ogg";
+  const extMap: Record<string, string> = {
+    ".webm": "audio/webm", ".ogg": "audio/ogg", ".mp3": "audio/mpeg",
+    ".wav": "audio/wav", ".m4a": "audio/mp4", ".flac": "audio/flac",
+    ".opus": "audio/opus", ".aac": "audio/aac", ".wma": "audio/x-ms-wma",
+  };
+  const ext = path.extname(recording.audioPath).toLowerCase();
+  const contentType = extMap[ext] || "audio/webm";
 
   return new NextResponse(buffer, {
     headers: {

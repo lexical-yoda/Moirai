@@ -123,9 +123,10 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith("audio/")) {
-      setError("Please select an audio file");
+    // Validate file type — accept audio files and webm/ogg containers
+    const validTypes = ["audio/", "video/webm", "video/ogg"];
+    if (!validTypes.some((t) => file.type.startsWith(t)) && !file.name.match(/\.(webm|ogg|mp3|wav|m4a|flac|opus|wma|aac)$/i)) {
+      setError("Unsupported format. Use webm, mp3, wav, m4a, ogg, or flac.");
       return;
     }
 
@@ -150,7 +151,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
           <input
             ref={fileInputRef}
             type="file"
-            accept="audio/*"
+            accept="audio/*,.webm,.ogg"
             className="hidden"
             onChange={handleUpload}
           />
