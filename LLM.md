@@ -51,7 +51,7 @@ src/
 │   ├── (auth)/                # Login/register — theme toggle, public routes
 │   │   ├── login/page.tsx
 │   │   ├── register/page.tsx
-│   │   └── layout.tsx         # Adds theme toggle to auth pages
+│   │   └── layout.tsx         # Adds ThemePicker to auth pages
 │   ├── (app)/                 # Authenticated pages — sidebar (desktop) + bottom nav (mobile)
 │   │   ├── page.tsx           # Dashboard (stats, mood chart, heatmap, topics, recent)
 │   │   ├── entry/[date]/      # Journal editor with sidebar (insights, links, recordings, similar)
@@ -75,7 +75,7 @@ src/
 │       └── health/            # Liveness check (unauthenticated basic, detailed with auth)
 ├── components/
 │   ├── editor/                # MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
-│   ├── layout/                # Sidebar, BottomNav, Header, UserMenu, ThemeToggle, ServiceStatus
+│   ├── layout/                # Sidebar, BottomNav, Header, UserMenu, ThemePicker, ServiceStatus
 │   ├── entry/                 # InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
 │   ├── dashboard/             # MoodChart, MoodHeatmap, TopicCloud, RecentEntries
 │   ├── reflections/           # ReflectionCard, GenerateReflection
@@ -245,11 +245,48 @@ Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and expli
 - First user auto-becomes admin; registration auto-closes
 - Registration blocked at API level in `auth/[...all]/route.ts` before reaching better-auth
 
+### Theming
+
+7 color palettes, each with dark and light mode:
+- **Palettes:** GitHub (default), Indigo, Nord, Emerald, Rose, Amber, Ocean
+- **Mode:** controlled by `next-themes` (adds `.dark` class to `<html>`)
+- **Palette:** controlled by `data-palette` attribute on `<html>`, stored in `localStorage` as `moirai-palette`
+- **CSS structure:** `globals.css` has `[data-palette="X"]` for light and `.dark[data-palette="X"]` for dark variants
+- **Component:** `ThemePicker` in `src/components/layout/theme-picker.tsx` — dropdown with palette dots + light/dark toggle
+- **Validation:** localStorage value validated against palette list on mount to prevent injection
+
+When adding new CSS that should be theme-aware, use the existing CSS variables (`--primary`, `--background`, `--border`, etc.) — they automatically adapt to the selected palette and mode.
+
 ### Mobile Navigation
 
-- Desktop (md+): sidebar with full nav
+- Desktop (md+): sidebar with full nav (6 items including Reflections)
 - Mobile (<md): bottom tab bar with 5 tabs (Home, Calendar, Write, Search, Settings)
 - No hamburger menu — clean split
+- Bottom nav respects safe area for devices with home indicators/notches
+
+### Voice Recording Flow
+
+1. User clicks Record → MediaRecorder captures audio (webm/opus)
+2. User clicks Stop → audio blob available for preview
+3. User clicks Transcribe → blob sent to `/api/voice/transcribe` → proxied to Whisper server
+4. Transcribe route auto-detects Whisper API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`)
+5. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
+6. Recording saved to disk (`/data/voice/<nanoid>.webm`) and metadata to `voice_recordings` table
+7. Transcribed text inserted into editor, recordings list refreshed
+8. Recordings visible below tags section with playback controls on all screen sizes
+
+### Entry Page Structure
+
+The entry page (`/entry/[date]`) has:
+- **Header row 1:** date + save status + word count
+- **Header row 2:** Record, Template, Version History, Delete buttons (horizontally scrollable)
+- **Title input:** borderless, large font
+- **Tiptap editor:** rich text with toolbar
+- **Tags section:** below editor
+- **Recordings list:** below tags (visible on all screens)
+- **Sidebar (lg+ only):** AI Insights, Linked Entries, Recordings (duplicate), Similar Entries
+
+Delete button uses a Dialog confirmation, not `confirm()`.
 
 ## Common Tasks
 
@@ -312,3 +349,8 @@ Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and expli
 11. **New tables need two places** — `schema.ts` (Drizzle) AND `index.ts` (auto-migration SQL). They must match.
 12. **Auth client has no baseURL** — it uses relative URLs. This is intentional for reverse proxy compatibility.
 13. **Voice files live on disk** — stored in `/data/voice/` (Docker) or `data/voice/` (local). The `audio_path` column stores just the filename, not the full path.
+14. **Theming uses two mechanisms** — `next-themes` for dark/light (`.dark` class), `data-palette` attribute for color palette. Both on `<html>`. CSS uses `[data-palette="X"]` and `.dark[data-palette="X"]` selectors.
+15. **Whisper API is auto-detected** — the transcribe route tries 3 API formats in order: custom `/transcribe`, whisper-asr-webservice `/asr`, and OpenAI `/v1/audio/transcriptions`. No configuration needed.
+16. **Voice recorder creates entries** — if recording on a new day with no existing entry, the voice recorder creates the entry via the API before saving the recording. The `entryId` passed to VoiceRecorder may be null.
+17. **Never use `confirm()` or `alert()`** — use shadcn Dialog components for all confirmations. See delete button pattern in entry page and reflections page.
+18. **Heatmap uses SVG** — the mood heatmap is a custom SVG component, not a library. Cell positions are calculated with exact pixel math. Tailwind classes are applied to SVG `<rect>` elements via `className`.

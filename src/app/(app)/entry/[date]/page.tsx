@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { TagInput } from "@/components/editor/tag-input";
@@ -12,11 +12,21 @@ import { InsightsPanel } from "@/components/entry/insights-panel";
 import { SimilarEntries } from "@/components/entry/similar-entries";
 import { RecordingsList } from "@/components/entry/recordings-list";
 import { EntryLinks } from "@/components/entry/entry-links";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Trash2 } from "lucide-react";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { toast } from "sonner";
 
 interface Entry {
   id: string;
@@ -60,6 +70,7 @@ interface SimilarEntry {
 
 export default function EntryPage() {
   const params = useParams<{ date: string }>();
+  const router = useRouter();
   const date = params.date;
 
   const [entry, setEntry] = useState<Entry | null>(null);
@@ -78,6 +89,7 @@ export default function EntryPage() {
   const [recordings, setRecordings] = useState<{ id: string; transcription: string | null; duration: number | null; createdAt: string }[]>([]);
   const [linkedEntries, setLinkedEntries] = useState<{ id: string; date: string; title: string; wordCount: number | null; linkId: string }[]>([]);
   const [editorKey, setEditorKey] = useState(0);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
 
@@ -270,6 +282,17 @@ export default function EntryPage() {
     setVersions(await versionsRes.json());
   }
 
+  async function handleDelete() {
+    if (!entry) return;
+    const res = await fetch(`/api/entries/${entry.id}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.success("Entry deleted");
+      router.push("/");
+    } else {
+      toast.error("Failed to delete entry");
+    }
+  }
+
   const wordCount = content.replace(/<[^>]*>/g, " ").trim().split(/\s+/).filter(Boolean).length;
   const dateFormatted = (() => {
     try { return format(parseISO(date), "EEEE, MMMM d, yyyy"); }
@@ -309,7 +332,36 @@ export default function EntryPage() {
               }}
             />
             <TemplateSelector onSelect={handleTemplateSelect} />
-            <VersionHistory entryId={entry?.id || ""} versions={versions} onRevert={handleRevert} />
+            <VersionHistory
+              entryId={entry?.id || ""}
+              versions={versions}
+              onRevert={handleRevert}
+              onClearHistory={async () => {
+                if (!entry) return;
+                await fetch(`/api/entries/${entry.id}/versions`, { method: "DELETE" });
+                setVersions([]);
+                toast.success("Version history cleared");
+              }}
+            />
+            {entry && (
+              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogTrigger render={<Button variant="ghost" size="sm" className="gap-1.5 text-destructive hover:text-destructive" title="Delete entry" />}>
+                  <Trash2 className="h-4 w-4" />
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete Entry</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete this entry and all its recordings, versions, and insights.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" size="sm" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                    <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         </div>
 

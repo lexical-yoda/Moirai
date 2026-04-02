@@ -1,4 +1,4 @@
-import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { ThemePicker } from "@/components/layout/theme-picker";
 
 export default function AuthLayout({
   children,
@@ -8,7 +8,7 @@ export default function AuthLayout({
   return (
     <>
       <div className="fixed top-4 right-4 z-50">
-        <ThemeToggle />
+        <ThemePicker />
       </div>
       {children}
     </>

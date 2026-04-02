@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { format, subDays, startOfWeek, eachDayOfInterval, getDay } from "date-fns";
+import { format, subDays, startOfWeek, eachDayOfInterval } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ interface MoodHeatmapProps {
 }
 
 function moodColor(score: number | null, hasEntry: boolean): string {
-  if (!hasEntry) return "bg-muted/40";
+  if (!hasEntry) return "bg-muted/30";
   if (score == null) return "bg-muted";
   if (score >= 0.5) return "bg-green-500";
   if (score >= 0.2) return "bg-green-400";
@@ -27,60 +27,63 @@ function moodColor(score: number | null, hasEntry: boolean): string {
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DAYS = ["", "Mon", "", "Wed", "", "Fri", ""];
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const CELL = 11;
+const GAP = 2;
+const STEP = CELL + GAP;
 
 export function MoodHeatmap({ data }: MoodHeatmapProps) {
-  const { grid, monthLabels } = useMemo(() => {
+  const { cells, weeks, monthLabels } = useMemo(() => {
     const now = new Date();
     const start = startOfWeek(subDays(now, 364));
     const days = eachDayOfInterval({ start, end: now });
-
     const dataMap = new Map(data.map((d) => [d.date, d]));
 
-    // Build weeks grid (7 rows x ~52 cols)
-    const weeks: { date: string; score: number | null; hasEntry: boolean }[][] = [];
-    let currentWeek: typeof weeks[0] = [];
-
-    // Pad first week
-    const startDay = getDay(start);
-    for (let i = 0; i < startDay; i++) {
-      currentWeek.push({ date: "", score: null, hasEntry: false });
-    }
+    const cells: { date: string; score: number | null; hasEntry: boolean; col: number; row: number }[] = [];
+    let col = 0;
+    let prevWeek = -1;
 
     for (const day of days) {
+      const dayOfWeek = day.getDay(); // 0=Sun
+      const weekNum = Math.floor((day.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000));
+
+      if (weekNum !== prevWeek) {
+        col = weekNum;
+        prevWeek = weekNum;
+      }
+
       const dateStr = format(day, "yyyy-MM-dd");
       const point = dataMap.get(dateStr);
-      currentWeek.push({
+      cells.push({
         date: dateStr,
         score: point?.moodScore ?? null,
         hasEntry: !!point,
+        col: weekNum,
+        row: dayOfWeek,
       });
-      if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    }
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push({ date: "", score: null, hasEntry: false });
-      weeks.push(currentWeek);
     }
 
-    // Month labels
+    const totalWeeks = cells.length > 0 ? cells[cells.length - 1].col + 1 : 0;
+
+    // Month labels positioned at the week where a new month starts
     const labels: { label: string; col: number }[] = [];
     let lastMonth = -1;
-    weeks.forEach((week, i) => {
-      const firstDay = week.find((d) => d.date);
-      if (firstDay?.date) {
-        const month = parseInt(firstDay.date.split("-")[1]) - 1;
+    for (const cell of cells) {
+      if (cell.row === 0) { // Only check Sundays (start of week)
+        const month = parseInt(cell.date.split("-")[1]) - 1;
         if (month !== lastMonth) {
-          labels.push({ label: MONTHS[month], col: i });
+          labels.push({ label: MONTHS[month], col: cell.col });
           lastMonth = month;
         }
       }
-    });
+    }
 
-    return { grid: weeks, monthLabels: labels };
+    return { cells, weeks: totalWeeks, monthLabels: labels };
   }, [data]);
+
+  const gridWidth = weeks * STEP;
+  const labelWidth = 28;
 
   return (
     <Card>
@@ -91,59 +94,72 @@ export function MoodHeatmap({ data }: MoodHeatmapProps) {
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          {/* Month labels */}
-          <div className="flex ml-8 mb-1">
+          <svg
+            width={labelWidth + gridWidth + 4}
+            height={STEP * 7 + 20 + 24}
+            className="block"
+          >
+            {/* Month labels */}
             {monthLabels.map((m, i) => (
-              <div
+              <text
                 key={i}
-                className="text-[10px] text-muted-foreground"
-                style={{ position: "relative", left: `${m.col * 13}px` }}
+                x={labelWidth + m.col * STEP}
+                y={10}
+                className="fill-muted-foreground"
+                fontSize={10}
               >
                 {m.label}
-              </div>
+              </text>
             ))}
-          </div>
 
-          <div className="flex gap-0">
             {/* Day labels */}
-            <div className="flex flex-col gap-[2px] mr-1 pt-0">
-              {DAYS.map((d, i) => (
-                <div key={i} className="h-[11px] text-[9px] text-muted-foreground leading-[11px] w-6 text-right pr-1">
-                  {d}
-                </div>
-              ))}
-            </div>
+            {[1, 3, 5].map((row) => (
+              <text
+                key={row}
+                x={0}
+                y={18 + row * STEP + CELL - 2}
+                className="fill-muted-foreground"
+                fontSize={9}
+              >
+                {DAY_LABELS[row]}
+              </text>
+            ))}
 
-            {/* Grid */}
-            <div className="flex gap-[2px]">
-              {grid.map((week, wi) => (
-                <div key={wi} className="flex flex-col gap-[2px]">
-                  {week.map((day, di) => (
-                    <div
-                      key={`${wi}-${di}`}
-                      className={cn(
-                        "h-[11px] w-[11px] rounded-sm",
-                        day.date ? moodColor(day.score, day.hasEntry) : "bg-transparent"
-                      )}
-                      title={day.date ? `${day.date}${day.hasEntry ? ` (mood: ${day.score?.toFixed(1) ?? "no data"})` : " (no entry)"}` : ""}
-                    />
+            {/* Grid cells */}
+            {cells.map((cell, i) => (
+              <rect
+                key={i}
+                x={labelWidth + cell.col * STEP}
+                y={18 + cell.row * STEP}
+                width={CELL}
+                height={CELL}
+                rx={2}
+                className={cn(
+                  moodColor(cell.score, cell.hasEntry),
+                  "transition-colors"
+                )}
+              >
+                <title>
+                  {cell.date}{cell.hasEntry ? ` (mood: ${cell.score?.toFixed(1) ?? "no AI data"})` : " (no entry)"}
+                </title>
+              </rect>
+            ))}
+
+            {/* Legend */}
+            {(() => {
+              const ly = 18 + 7 * STEP + 10;
+              const colors = ["bg-red-400", "bg-orange-400", "bg-yellow-400", "bg-emerald-300", "bg-green-400", "bg-green-500"];
+              return (
+                <>
+                  <text x={labelWidth} y={ly + 8} className="fill-muted-foreground" fontSize={9}>Negative</text>
+                  {colors.map((c, i) => (
+                    <rect key={i} x={labelWidth + 48 + i * 14} y={ly} width={10} height={10} rx={2} className={c} />
                   ))}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div className="flex items-center gap-1 mt-2 ml-8">
-            <span className="text-[9px] text-muted-foreground">Negative</span>
-            <div className="h-[9px] w-[9px] rounded-sm bg-red-400" />
-            <div className="h-[9px] w-[9px] rounded-sm bg-orange-400" />
-            <div className="h-[9px] w-[9px] rounded-sm bg-yellow-400" />
-            <div className="h-[9px] w-[9px] rounded-sm bg-emerald-300" />
-            <div className="h-[9px] w-[9px] rounded-sm bg-green-400" />
-            <div className="h-[9px] w-[9px] rounded-sm bg-green-500" />
-            <span className="text-[9px] text-muted-foreground">Positive</span>
-          </div>
+                  <text x={labelWidth + 48 + colors.length * 14 + 4} y={ly + 8} className="fill-muted-foreground" fontSize={9}>Positive</text>
+                </>
+              );
+            })()}
+          </svg>
         </div>
       </CardContent>
     </Card>

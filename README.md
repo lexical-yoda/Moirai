@@ -15,7 +15,7 @@ A local-first, privacy-focused journaling app with optional AI-powered insights,
 - Bi-directional entry linking (link related entries together)
 - Voice recording with persistent playback (multiple recordings per entry)
 - Multi-user with admin controls (first user is admin, registration lockdown)
-- Dark/light theme (including login/register pages)
+- 7 color themes (GitHub, Indigo, Nord, Emerald, Rose, Amber, Ocean) with dark/light mode
 - Mood heatmap (GitHub-style year grid on dashboard)
 - Markdown export
 - PWA support (installable on mobile and desktop)
@@ -264,7 +264,7 @@ Go to **Settings > Voice Transcription**, enter `http://<machine-ip>:5000`, and 
 ```
 src/
   app/
-    (auth)/              Login, register (with theme toggle)
+    (auth)/              Login, register (with theme picker)
     (app)/               Authenticated pages
       entry/[date]/      Journal editor with autosave
       calendar/          Monthly calendar view
@@ -281,7 +281,7 @@ src/
       health/            Liveness check
   components/
     editor/              MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
-    layout/              Sidebar, BottomNav, Header, ThemeToggle, ServiceStatus
+    layout/              Sidebar, BottomNav, Header, ThemePicker, ServiceStatus
     entry/               InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
     dashboard/           MoodChart, MoodHeatmap, TopicCloud, RecentEntries
     reflections/         ReflectionCard, GenerateReflection

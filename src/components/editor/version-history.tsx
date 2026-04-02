@@ -27,9 +27,10 @@ interface VersionHistoryProps {
   entryId: string;
   versions: Version[];
   onRevert: (versionId: string) => void;
+  onClearHistory?: () => void;
 }
 
-export function VersionHistory({ entryId, versions, onRevert }: VersionHistoryProps) {
+export function VersionHistory({ entryId, versions, onRevert, onClearHistory }: VersionHistoryProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -112,6 +113,24 @@ export function VersionHistory({ entryId, versions, onRevert }: VersionHistoryPr
             )}
           </div>
         </div>
+        {onClearHistory && (
+          <div className="flex justify-between items-center border-t pt-3">
+            <p className="text-xs text-muted-foreground">{versions.length} version{versions.length !== 1 && "s"} saved</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-destructive hover:text-destructive"
+              onClick={() => {
+                onClearHistory();
+                setOpen(false);
+                setSelectedId(null);
+                setPreview(null);
+              }}
+            >
+              Clear all history
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
