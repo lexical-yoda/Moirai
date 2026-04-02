@@ -156,6 +156,8 @@ In Moirai **Settings > AI/LLM**: Provider `llama-server`, Endpoint `http://<mach
 
 For CPU-only (no GPU), use `ghcr.io/ggml-org/llama.cpp:server` and remove the `deploy` block.
 
+> **Semantic Search:** Add `--embeddings` to the command to enable vector search. This lets you search by meaning (e.g., "the day I went hiking") rather than exact keywords. The same llama.cpp instance handles both chat and embeddings. Leave the Embeddings section in Settings empty — it uses the AI endpoint automatically.
+
 ### Ollama
 
 ```yaml
