@@ -27,10 +27,12 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 **Journaling**
 - Rich markdown editor with formatting toolbar
 - One entry per day with autosave
+- Raw & AI-formatted content views
+- Auto-generated titles
 - Entry templates (gratitude, daily review, morning pages)
 - Bi-directional entry linking
 - Version history with preview & revert
-- Manual + AI-powered tagging
+- Manual + AI-powered tagging (themes, people, events, places)
 
 </td>
 <td width="50%">
@@ -41,7 +43,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Upload existing audio files
 - Download recordings
 - Multiple recordings per entry
-- Auto-transcription via Whisper
+- Auto-transcription via Whisper (background pipeline)
 
 </td>
 </tr>
@@ -60,15 +62,27 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 <td>
 
 **AI Insights** *(optional)*
+- Background processing pipeline with notification bell
 - Mood analysis & scoring
-- Theme extraction & auto-tagging
-- Action items & key people detection
+- Theme, people, event, and place extraction
+- Auto-formatted content & generated titles
+- Action items detection
 - Weekly & monthly reflections
 - Works with llama.cpp, Ollama, LM Studio, or any OpenAI-compatible API
 
 </td>
 </tr>
 <tr>
+<td>
+
+**Therapy Tracking** *(optional)*
+- Therapy notes section on entries
+- AI extracts therapy items from notes
+- Session day matching (pending → discussed → resolved)
+- Dedicated /therapy page with status management
+- Calendar indicators for therapy & session days
+
+</td>
 <td>
 
 **Themes & Mobile**
@@ -79,6 +93,8 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Responsive across all screen sizes
 
 </td>
+</tr>
+<tr>
 <td>
 
 **Admin & Security**
@@ -88,6 +104,15 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Rate-limited authentication
 - Encrypted sessions & secure cookies
 - Input validation on every endpoint
+
+</td>
+<td>
+
+**Activity Tracking**
+- Track daily habits and activities
+- Manual toggle or AI auto-detection from entries
+- Monthly activity grid on dashboard
+- Good/bad activity types with emoji
 
 </td>
 </tr>
@@ -280,22 +305,24 @@ src/
   app/
     (auth)/              Login & register (with theme picker)
     (app)/               Authenticated pages (sidebar + bottom nav)
-      entry/[date]/      Journal editor
-      calendar/          Monthly calendar
+      entry/[date]/      Journal editor (raw/formatted, therapy notes)
+      calendar/          Monthly calendar with therapy indicators
       search/            Keyword + semantic search
+      therapy/           Therapy items management
       reflections/       AI reflections
-      settings/          Integrations + admin
-    api/                 30+ API routes
+      settings/          Integrations, activities, therapy toggle, admin
+    api/                 40+ API routes
   components/
     editor/              Editor, toolbar, voice recorder, tags, versions, templates
-    layout/              Sidebar, bottom nav, header, theme picker, service status
-    entry/               Insights, similar entries, recordings, entry links
-    dashboard/           Mood chart, heatmap, topics, recent entries
+    layout/              Sidebar, bottom nav, header, theme picker, processing bell
+    entry/               Insights, similar entries, recordings, entry links, activities
+    dashboard/           Mood chart, heatmap, topics, activity grid, recent entries
     reflections/         Cards, generate dialog
   lib/
-    db/                  Schema (15 tables), auto-migrating connection, FTS5
+    db/                  Schema (19 tables), auto-migrating connection, FTS5
     auth/                better-auth config, admin/registration helpers
     ai/                  Configurable client, prompts, extraction, embeddings, reflections
+    processing/          Background task queue (transcription, formatting, insights, therapy)
 whisper-sidecar/         FastAPI + faster-whisper server
 ```
 
