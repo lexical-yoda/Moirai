@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.gitignore
+.env*
+!.env.example
+data/
+*.md
+!README.md
+whisper-sidecar/__pycache__
