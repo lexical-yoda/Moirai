@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { format, subDays, startOfWeek, eachDayOfInterval } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flame } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface HeatmapDataPoint {
   date: string;
@@ -15,15 +14,15 @@ interface MoodHeatmapProps {
   data: HeatmapDataPoint[];
 }
 
-function moodColor(score: number | null, hasEntry: boolean): string {
-  if (!hasEntry) return "bg-muted/30";
-  if (score == null) return "bg-muted";
-  if (score >= 0.5) return "bg-green-500";
-  if (score >= 0.2) return "bg-green-400";
-  if (score >= 0) return "bg-emerald-300";
-  if (score >= -0.3) return "bg-yellow-400";
-  if (score >= -0.6) return "bg-orange-400";
-  return "bg-red-400";
+function moodFill(score: number | null, hasEntry: boolean): string {
+  if (!hasEntry) return "var(--border)";
+  if (score == null) return "var(--muted-foreground)";
+  if (score >= 0.5) return "#22c55e";
+  if (score >= 0.2) return "#4ade80";
+  if (score >= 0) return "#6ee7b7";
+  if (score >= -0.3) return "#facc15";
+  if (score >= -0.6) return "#fb923c";
+  return "#f87171";
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -134,10 +133,8 @@ export function MoodHeatmap({ data }: MoodHeatmapProps) {
                 width={CELL}
                 height={CELL}
                 rx={2}
-                className={cn(
-                  moodColor(cell.score, cell.hasEntry),
-                  "transition-colors"
-                )}
+                fill={moodFill(cell.score, cell.hasEntry)}
+                opacity={!cell.hasEntry ? 0.3 : 1}
               >
                 <title>
                   {cell.date}{cell.hasEntry ? ` (mood: ${cell.score?.toFixed(1) ?? "no AI data"})` : " (no entry)"}
@@ -148,12 +145,12 @@ export function MoodHeatmap({ data }: MoodHeatmapProps) {
             {/* Legend */}
             {(() => {
               const ly = 18 + 7 * STEP + 10;
-              const colors = ["bg-red-400", "bg-orange-400", "bg-yellow-400", "bg-emerald-300", "bg-green-400", "bg-green-500"];
+              const colors = ["#f87171", "#fb923c", "#facc15", "#6ee7b7", "#4ade80", "#22c55e"];
               return (
                 <>
                   <text x={labelWidth} y={ly + 8} className="fill-muted-foreground" fontSize={9}>Negative</text>
                   {colors.map((c, i) => (
-                    <rect key={i} x={labelWidth + 48 + i * 14} y={ly} width={10} height={10} rx={2} className={c} />
+                    <rect key={i} x={labelWidth + 48 + i * 14} y={ly} width={10} height={10} rx={2} fill={c} />
                   ))}
                   <text x={labelWidth + 48 + colors.length * 14 + 4} y={ly + 8} className="fill-muted-foreground" fontSize={9}>Positive</text>
                 </>

@@ -403,6 +403,38 @@ export default function EntryPage() {
             }}
           />
         )}
+
+        {/* Mobile: show insights, links, similar entries inline (hidden on desktop where sidebar shows them) */}
+        {entry && (
+          <div className="space-y-4 lg:hidden">
+            <InsightsPanel insight={insight} loading={insightLoading} />
+            <EntryLinks
+              entryId={entry.id}
+              links={linkedEntries}
+              onLink={async (targetDate) => {
+                const res = await fetch(`/api/entries/${entry.id}/links`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ targetDate }),
+                });
+                if (!res.ok) {
+                  const data = await res.json();
+                  throw new Error(data.error || "Failed to link");
+                }
+                loadLinks(entry.id);
+              }}
+              onUnlink={async (linkId) => {
+                await fetch(`/api/entries/${entry.id}/links`, {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ linkId }),
+                });
+                setLinkedEntries((prev) => prev.filter((l) => l.linkId !== linkId));
+              }}
+            />
+            <SimilarEntries entries={similarEntries} loading={similarLoading} />
+          </div>
+        )}
       </div>
 
       {/* Sidebar — insights, recordings, similar entries */}
