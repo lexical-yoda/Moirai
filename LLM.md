@@ -266,27 +266,35 @@ When adding new CSS that should be theme-aware, use the existing CSS variables (
 
 ### Voice Recording Flow
 
-1. User clicks Record → MediaRecorder captures audio (webm/opus)
-2. User clicks Stop → audio blob available for preview
-3. User clicks Transcribe → blob sent to `/api/voice/transcribe` → proxied to Whisper server
-4. Transcribe route auto-detects Whisper API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`)
-5. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
-6. Recording saved to disk (`/data/voice/<nanoid>.webm`) and metadata to `voice_recordings` table
-7. Transcribed text inserted into editor, recordings list refreshed
-8. Recordings visible below tags section with playback controls on all screen sizes
+The voice recorder saves recordings BEFORE transcription so audio is never lost.
+
+1. User clicks **Record** → MediaRecorder captures audio (webm/opus) with **Pause/Resume** support
+2. User clicks **Stop** → audio blob available for preview
+3. User has three options:
+   - **Transcribe** — saves recording to disk first, then sends to Whisper. If transcription fails, recording is still saved
+   - **Save** — saves recording without transcription (when Whisper is unavailable or not needed)
+   - **Discard** — deletes the unsaved recording
+4. **Upload** button allows importing existing audio files (any audio format, max 50MB)
+5. Transcribe route auto-detects Whisper API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`) with 5-minute timeout
+6. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
+7. Recordings stored on disk (`/data/voice/<nanoid>.webm`) with metadata in `voice_recordings` table
+8. **Download** button on each saved recording for export
+9. Recordings visible below tags section with playback controls on all screen sizes
+10. Supports 20+ minute recordings (body size limit: 50MB, nginx proxy_read_timeout: 300s)
 
 ### Entry Page Structure
 
 The entry page (`/entry/[date]`) has:
 - **Header row 1:** date + save status + word count
-- **Header row 2:** Record, Template, Version History, Delete buttons (horizontally scrollable)
+- **Header row 2:** Record, Upload, Pause/Resume, Template, Version History (with clear), Delete buttons
 - **Title input:** borderless, large font
 - **Tiptap editor:** rich text with toolbar
 - **Tags section:** below editor
-- **Recordings list:** below tags (visible on all screens)
-- **Sidebar (lg+ only):** AI Insights, Linked Entries, Recordings (duplicate), Similar Entries
+- **Recordings list:** below tags (visible on all screens, with download/delete per recording)
+- **Mobile (< lg):** AI Insights, Linked Entries, Similar Entries shown inline below recordings
+- **Desktop (lg+):** same content in a sidebar on the right
 
-Delete button uses a Dialog confirmation, not `confirm()`.
+Delete button uses a Dialog confirmation, not `confirm()`. Version History has a "Clear all history" button.
 
 ## Common Tasks
 

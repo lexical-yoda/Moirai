@@ -1,90 +1,145 @@
-# Moirai
+<p align="center">
+  <h1 align="center">Moirai</h1>
+  <p align="center">A local-first, privacy-focused journaling app with AI-powered insights</p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js" />
+    <img src="https://img.shields.io/badge/SQLite-local--first-blue?logo=sqlite" alt="SQLite" />
+    <img src="https://img.shields.io/badge/PWA-installable-purple" alt="PWA" />
+    <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker" alt="Docker" />
+    <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
+  </p>
+</p>
 
-A local-first, privacy-focused journaling app with optional AI-powered insights, voice-to-text, and semantic search. All data stays on your machine. Installable as a PWA.
+---
+
+Your journal. Your data. Your machine.
+
+Moirai is a self-hosted journal that works completely offline. AI features like mood analysis, voice transcription, and semantic search are optional — plug in your own LLM and Whisper server when you're ready, or just write.
+
+---
 
 ## Features
 
-**Core (works standalone, no external services):**
-- Rich markdown editor with formatting toolbar
-- One entry per day with autosave (2s debounce)
-- Calendar view with mood-colored days
-- Full-text search (FTS5 with BM25 ranking)
-- Entry templates (gratitude, daily review, morning pages, weekly reflection)
-- Manual tagging with autocomplete
-- Entry version history with preview and revert
-- Bi-directional entry linking (link related entries together)
-- Voice recording with persistent playback (multiple recordings per entry)
-- Multi-user with admin controls (first user is admin, registration lockdown)
-- 7 color themes (GitHub, Indigo, Nord, Emerald, Rose, Amber, Ocean) with dark/light mode
-- Mood heatmap (GitHub-style year grid on dashboard)
-- Markdown export
-- PWA support (installable on mobile and desktop)
-- Mobile-optimized with bottom tab navigation
-- Docker deployment with auto-migration and healthchecks
+<table>
+<tr>
+<td width="50%">
 
-**AI-Powered (configure in Settings):**
-- Mood analysis, theme extraction, action items, key people detection
-- Auto-tagging from AI-detected themes
-- Weekly and monthly AI-generated reflections
-- Semantic search via embeddings ("find entries similar to this one")
-- Voice-to-text transcription via Whisper
+**Journaling**
+- Rich markdown editor with formatting toolbar
+- One entry per day with autosave
+- Entry templates (gratitude, daily review, morning pages)
+- Bi-directional entry linking
+- Version history with preview & revert
+- Manual + AI-powered tagging
+
+</td>
+<td width="50%">
+
+**Voice**
+- Record, pause, resume voice notes
+- Persistent recordings with playback
+- Upload existing audio files
+- Download recordings
+- Multiple recordings per entry
+- Auto-transcription via Whisper
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Dashboard & Search**
+- Mood heatmap (GitHub-style year grid)
+- Mood trend chart & topic cloud
+- Streak counter & writing stats
+- Full-text search (FTS5 + BM25)
+- Semantic search ("find similar entries")
+- Markdown journal export
+
+</td>
+<td>
+
+**AI Insights** *(optional)*
+- Mood analysis & scoring
+- Theme extraction & auto-tagging
+- Action items & key people detection
+- Weekly & monthly reflections
+- Works with llama.cpp, Ollama, LM Studio, or any OpenAI-compatible API
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Themes & Mobile**
+- 7 color palettes: GitHub, Indigo, Nord, Emerald, Rose, Amber, Ocean
+- Dark & light mode
+- PWA — installable on phone & desktop
+- Bottom tab navigation on mobile
+- Responsive across all screen sizes
+
+</td>
+<td>
+
+**Admin & Security**
+- Multi-user with separate journals
+- First user becomes admin
+- Registration lockdown (admin toggle)
+- Rate-limited authentication
+- Encrypted sessions & secure cookies
+- Input validation on every endpoint
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Tech Stack
 
-- **Framework:** Next.js 16 (App Router, TypeScript, Turbopack)
-- **Database:** SQLite via Drizzle ORM + better-sqlite3 (auto-migrating)
-- **Auth:** better-auth (credentials, sessions, rate-limited, admin roles)
-- **UI:** Tailwind CSS v4 + shadcn/ui (Base UI) + Lucide icons
-- **Editor:** Tiptap with task lists, highlights, code blocks
-- **Charts:** Recharts
-- **Fonts:** Syne (display) + DM Mono (monospace)
-- **AI:** Any OpenAI-compatible API (llama.cpp, Ollama, LM Studio, etc.)
-- **Voice:** faster-whisper via FastAPI sidecar
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router, TypeScript, Turbopack) |
+| Database | SQLite via Drizzle ORM + better-sqlite3 |
+| Auth | better-auth (credentials, sessions, admin roles) |
+| UI | Tailwind CSS v4 + shadcn/ui (Base UI) + Lucide |
+| Editor | Tiptap (task lists, highlights, code blocks) |
+| Charts | Recharts + custom SVG heatmap |
+| Fonts | Syne (display) + DM Mono (monospace) |
+| AI | Any OpenAI-compatible API |
+| Voice | faster-whisper (auto-detects API format) |
+
+---
 
 ## Quick Start
 
 ### Local Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Create environment file
 cp .env.example .env.local
-# Edit .env.local and set BETTER_AUTH_SECRET (generate with: openssl rand -hex 32)
-
-# Push database schema
+# Set BETTER_AUTH_SECRET (generate with: openssl rand -hex 32)
 npm run db:push
-
-# Start dev server
 npm run dev
 ```
 
-Open http://localhost:3000. The first account you create becomes admin.
+Open `http://localhost:3000`. First account becomes admin.
 
 ### Docker
 
 ```bash
-# Create .env
 echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" > .env
-
-# Pull and run (or docker compose up --build to build locally)
 docker compose up -d
 ```
 
-The app runs at http://localhost:3500. Database auto-initializes on first boot — no manual migration needed.
+App runs at `http://localhost:3500`. Database auto-initializes on first boot.
 
-### Behind a Reverse Proxy
-
-If exposing via nginx (e.g., `https://moirai.yourdomain.com`), set the URL in your `.env`:
+### Behind a Reverse Proxy (nginx)
 
 ```env
 BETTER_AUTH_SECRET=<your-secret>
 BETTER_AUTH_URL=https://moirai.yourdomain.com
-NEXT_PUBLIC_BETTER_AUTH_URL=https://moirai.yourdomain.com
 ```
-
-Example nginx config:
 
 ```nginx
 server {
@@ -102,29 +157,22 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
     }
 }
 ```
 
-## Admin System
+---
 
-The first user to register automatically becomes admin. Registration closes after the first signup.
+## Setting Up AI
 
-**Admin controls (Settings > Administration):**
-- Open/close registration
-- View all users
-- Delete non-admin users
+> The app works fully without AI. Configure endpoints in **Settings** after logging in. Each has a **Test** button.
 
-## Setting Up AI Services
+### llama.cpp *(recommended)*
 
-The app works fully without AI. To enable AI features, configure endpoints in **Settings** after logging in. Each integration has a **Test** button to verify connectivity.
-
-### llama.cpp (recommended for self-hosting)
-
-Download a GGUF model (e.g., [Llama 3.1 8B Instruct](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF)) and place it in a models directory.
+Download a [GGUF model](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) and place it in a models directory.
 
 ```yaml
-# docker-compose.yml
 services:
   llama-cpp:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
@@ -141,64 +189,52 @@ services:
               capabilities: [gpu]
     command: >
       -m /models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
-      --host 0.0.0.0
-      --port 8080
-      --embeddings
-      -ngl 99
-      -c 4096
+      --host 0.0.0.0 --port 8080 --embeddings -ngl 99 -c 4096
     restart: unless-stopped
 ```
 
-```bash
-docker compose up -d
-```
+Settings: Provider `llama-server`, Endpoint `http://<ip>:8080`
 
-In Moirai **Settings > AI/LLM**: Provider `llama-server`, Endpoint `http://<machine-ip>:8080`, click **Test**.
+> The `--embeddings` flag enables semantic search — search by meaning, not just keywords. Leave the Embeddings section in Settings empty; it uses the AI endpoint automatically.
 
-For CPU-only (no GPU), use `ghcr.io/ggml-org/llama.cpp:server` and remove the `deploy` block.
-
-> **Semantic Search:** Add `--embeddings` to the command to enable vector search. This lets you search by meaning (e.g., "the day I went hiking") rather than exact keywords. The same llama.cpp instance handles both chat and embeddings. Leave the Embeddings section in Settings empty — it uses the AI endpoint automatically.
+For CPU-only: use image `ghcr.io/ggml-org/llama.cpp:server` and remove the `deploy` block.
 
 ### Ollama
 
 ```yaml
-# docker-compose.yml
 services:
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
+    ports: ["11434:11434"]
+    volumes: [ollama-data:/root/.ollama]
     restart: unless-stopped
-
 volumes:
   ollama-data:
 ```
 
 ```bash
-docker compose up -d
-docker exec ollama ollama pull llama3.2
+docker compose up -d && docker exec ollama ollama pull llama3.2
 ```
 
-In Moirai **Settings**: Provider `Ollama`, Endpoint `http://<machine-ip>:11434`, Model `llama3.2`.
+Settings: Provider `Ollama`, Endpoint `http://<ip>:11434`, Model `llama3.2`
 
 ### LM Studio
 
-Download [LM Studio](https://lmstudio.ai), load a model, and start the local server (default port 1234).
+Download [LM Studio](https://lmstudio.ai), load a model, start the local server.
 
-In Moirai **Settings**: Provider `LM Studio`, Endpoint `http://<machine-ip>:1234`.
+Settings: Provider `LM Studio`, Endpoint `http://<ip>:1234`
 
-## Setting Up Voice Transcription (Whisper)
+---
 
-Voice transcription uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Recordings are saved and can be replayed from the entry page. Moirai auto-detects the Whisper API format, so any of these servers work.
+## Setting Up Voice Transcription
 
-### Docker Compose (recommended)
+Recordings are saved persistently and can be replayed, downloaded, or uploaded. Moirai auto-detects the Whisper API format.
+
+### Docker Compose
 
 Using [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice):
 
 ```yaml
-# docker-compose.yml on your GPU/transcription machine
 services:
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
@@ -210,97 +246,85 @@ services:
     restart: unless-stopped
 ```
 
-For GPU acceleration:
+For GPU: use image tag `latest-gpu` and add `deploy.resources.reservations.devices`.
 
-```yaml
-services:
-  whisper:
-    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
-    ports:
-      - "5000:9000"
-    environment:
-      - ASR_MODEL=base
-      - ASR_ENGINE=faster_whisper
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    restart: unless-stopped
-```
+Settings: Endpoint `http://<ip>:5000`
 
-```bash
-docker compose up -d
-```
+### Whisper Model Sizes
 
-### Native (without Docker)
+| Model | Size | Accuracy | Notes |
+|-------|------|----------|-------|
+| `tiny` | ~75MB | Basic | Fastest, good for testing |
+| `base` | ~150MB | Decent | Default, good for short notes |
+| `small` | ~500MB | Good | Best bang for buck |
+| `medium` | ~1.5GB | Very good | For longer recordings |
+| `large-v3` | ~3GB | Best | Needs GPU |
 
-```bash
-mkdir ~/whisper && cd ~/whisper
-python3 -m venv venv && source venv/bin/activate
-pip install faster-whisper fastapi uvicorn python-multipart requests
+---
 
-# Copy whisper-sidecar/server.py from this repo, then:
-DEVICE=cpu COMPUTE_TYPE=int8 uvicorn server:app --host 0.0.0.0 --port 5000
-```
+## Recommended AI Models
 
-### Configure in Moirai
+| Use Case | Model | Size |
+|----------|-------|------|
+| Journal insights | Llama 3.1 8B Instruct (Q4_K_M) | ~4.6GB |
+| Better quality | Mistral 7B Instruct (Q4_K_M) | ~4GB |
+| Structured output | Qwen 2.5 7B Instruct (Q4_K_M) | ~4.4GB |
+| Dedicated embeddings | nomic-embed-text v1.5 | ~270MB |
 
-Go to **Settings > Voice Transcription**, enter `http://<machine-ip>:5000`, and click **Test**.
-
-## Available Models
-
-| Use Case | Recommended Model | Size | Notes |
-|----------|------------------|------|-------|
-| Chat/Insights | Llama 3.2 3B Instruct | ~2GB | Good balance of speed and quality |
-| Chat/Insights | Mistral 7B Instruct | ~4GB | Better quality, needs more VRAM |
-| Embeddings | nomic-embed-text v1.5 | ~270MB | Purpose-built for embeddings |
-| Whisper | base | ~150MB | Fast, decent accuracy |
-| Whisper | medium | ~1.5GB | Better accuracy |
-| Whisper | large-v3 | ~3GB | Best accuracy, needs GPU |
+---
 
 ## Project Structure
 
 ```
 src/
   app/
-    (auth)/              Login, register (with theme picker)
-    (app)/               Authenticated pages
-      entry/[date]/      Journal editor with autosave
-      calendar/          Monthly calendar view
+    (auth)/              Login & register (with theme picker)
+    (app)/               Authenticated pages (sidebar + bottom nav)
+      entry/[date]/      Journal editor
+      calendar/          Monthly calendar
       search/            Keyword + semantic search
-      reflections/       AI-generated reflections
-      settings/          Integrations + admin panel
-    api/
-      admin/             Registration control, user management
-      entries/           CRUD, versions, insights, links, similar
-      voice/             Transcribe, recordings, file serving
-      reflections/       Generate, list, detail
-      search/            FTS5 keyword + semantic
-      settings/          User settings, test endpoints
-      health/            Liveness check
+      reflections/       AI reflections
+      settings/          Integrations + admin
+    api/                 30+ API routes
   components/
-    editor/              MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
-    layout/              Sidebar, BottomNav, Header, ThemePicker, ServiceStatus
-    entry/               InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
-    dashboard/           MoodChart, MoodHeatmap, TopicCloud, RecentEntries
-    reflections/         ReflectionCard, GenerateReflection
+    editor/              Editor, toolbar, voice recorder, tags, versions, templates
+    layout/              Sidebar, bottom nav, header, theme picker, service status
+    entry/               Insights, similar entries, recordings, entry links
+    dashboard/           Mood chart, heatmap, topics, recent entries
+    reflections/         Cards, generate dialog
   lib/
-    db/                  Schema, connection (auto-migrating), FTS5
-    auth/                better-auth config, session helpers
-    ai/                  Client, prompts, extraction, embeddings, reflections
+    db/                  Schema (15 tables), auto-migrating connection, FTS5
+    auth/                better-auth config, admin/registration helpers
+    ai/                  Configurable client, prompts, extraction, embeddings, reflections
 whisper-sidecar/         FastAPI + faster-whisper server
 ```
+
+---
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `BETTER_AUTH_SECRET` | Yes | — | Session signing secret (min 32 chars) |
-| `BETTER_AUTH_URL` | No | `http://localhost:3000` | App URL (set if behind reverse proxy) |
+| `BETTER_AUTH_SECRET` | Yes | — | Session signing secret |
+| `BETTER_AUTH_URL` | No | `http://localhost:3000` | App URL (for reverse proxy) |
 | `DATABASE_PATH` | No | `./data/moirai.db` | SQLite database path |
 
-AI, embeddings, and Whisper endpoints are configured per-user in the Settings page.
+AI, embeddings, and Whisper endpoints are configured per-user in Settings.
+
+---
+
+## NPM Scripts
+
+```bash
+npm run dev          # Development server
+npm run build        # Production build
+npm run start        # Production server
+npm run db:push      # Push schema to SQLite
+npm run db:studio    # Open Drizzle Studio (DB browser)
+npm run lint         # ESLint
+```
+
+---
 
 ## License
 
