@@ -1,5 +1,6 @@
 services:
   app:
+    image: ghcr.io/lexical-yoda/moirai:latest
     build: .
     ports:
       - "3500:3000"
