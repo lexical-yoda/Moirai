@@ -74,6 +74,34 @@ function migrateExisting(db: Database.Database) {
       source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(activity_id, date);
+
+    CREATE TABLE IF NOT EXISTS entry_links (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      target_entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS entry_links_unique_idx ON entry_links(source_entry_id, target_entry_id);
+
+    CREATE TABLE IF NOT EXISTS entry_tags (
+      entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS entry_tags_idx ON entry_tags(entry_id, tag_id);
+
+    CREATE TABLE IF NOT EXISTS entry_embeddings (
+      id TEXT PRIMARY KEY NOT NULL, entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      model_name TEXT NOT NULL, embedded_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS reflections (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL,
+      title TEXT, content TEXT, mood_summary TEXT, themes TEXT, key_insights TEXT, entry_ids TEXT,
+      generated_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+    );
   `);
 
   // Fix activity_logs unique index to include user_id (safe to attempt — fails if already correct)
