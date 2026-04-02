@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles } from "lucide-react";
+import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
+import { useSession } from "@/lib/auth/client";
 
 const PROVIDERS = [
   { value: "llama-server", label: "llama-server", defaultUrl: "http://localhost:8080" },
@@ -25,9 +26,24 @@ function TestBadge({ result, testing }: { result: TestResult; testing: boolean }
   return <span className="flex items-center gap-1 text-xs text-destructive"><X className="h-3 w-3" /> {result.error}</span>;
 }
 
+interface UserInfo {
+  id: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  createdAt: string;
+}
+
 export default function SettingsPage() {
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Admin state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserInfo[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   // AI settings
   const [aiProvider, setAiProvider] = useState("llama-server");
@@ -63,6 +79,18 @@ export default function SettingsPage() {
       } finally {
         setLoading(false);
       }
+
+      // Load admin data if admin
+      try {
+        const regRes = await fetch("/api/admin/registration");
+        if (regRes.ok) {
+          const regData = await regRes.json();
+          setIsAdmin(true);
+          setRegistrationOpen(regData.open);
+          const usersRes = await fetch("/api/admin/users");
+          if (usersRes.ok) setAllUsers(await usersRes.json());
+        }
+      } catch {}
     }
     load();
   }, []);
@@ -242,6 +270,94 @@ export default function SettingsPage() {
           {saving ? "Saving..." : "Save Settings"}
         </Button>
       </div>
+
+      {/* Admin Section */}
+      {isAdmin && (
+        <>
+          <Separator />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5" /> Administration</CardTitle>
+              <CardDescription>Manage users and registration</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Registration Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Registration</p>
+                  <p className="text-xs text-muted-foreground">
+                    {registrationOpen ? "New users can create accounts" : "Only existing users can sign in"}
+                  </p>
+                </div>
+                <Button
+                  variant={registrationOpen ? "destructive" : "default"}
+                  size="sm"
+                  disabled={adminLoading}
+                  onClick={async () => {
+                    setAdminLoading(true);
+                    try {
+                      const res = await fetch("/api/admin/registration", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ open: !registrationOpen }),
+                      });
+                      if (res.ok) {
+                        setRegistrationOpen(!registrationOpen);
+                        toast.success(registrationOpen ? "Registration closed" : "Registration opened");
+                      }
+                    } finally { setAdminLoading(false); }
+                  }}
+                >
+                  {registrationOpen ? "Close Registration" : "Open Registration"}
+                </Button>
+              </div>
+
+              <Separator />
+
+              {/* Users List */}
+              <div>
+                <p className="text-sm font-medium flex items-center gap-1 mb-3">
+                  <Users className="h-4 w-4" /> Users ({allUsers.length})
+                </p>
+                <div className="space-y-2">
+                  {allUsers.map((user) => (
+                    <div key={user.id} className="flex items-center justify-between rounded-md border p-3">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {user.name}
+                          {user.isAdmin && <span className="ml-2 text-xs text-muted-foreground">(admin)</span>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                      </div>
+                      {!user.isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            if (!confirm(`Delete user ${user.name}?`)) return;
+                            const res = await fetch("/api/admin/users", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ userId: user.id }),
+                            });
+                            if (res.ok) {
+                              setAllUsers((prev) => prev.filter((u) => u.id !== user.id));
+                              toast.success(`Deleted ${user.name}`);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
