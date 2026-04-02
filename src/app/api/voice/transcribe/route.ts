@@ -20,32 +20,42 @@ async function getWhisperUrl(userId: string): Promise<string | null> {
  * 3. whisper-asr-webservice: POST /asr?task=transcribe (audio_file in form)
  */
 async function tryTranscribe(baseUrl: string, file: Blob): Promise<Response> {
-  // Try custom sidecar format first
-  const form1 = new FormData();
-  form1.append("file", file);
-  try {
-    const res = await fetch(`${baseUrl}/transcribe`, { method: "POST", body: form1 });
-    if (res.ok) return res;
-  } catch {}
+  const timeout = 5 * 60 * 1000; // 5 minutes for long recordings
 
-  // Try whisper-asr-webservice format
-  const form2 = new FormData();
-  form2.append("audio_file", file);
-  try {
-    const res = await fetch(`${baseUrl}/asr?task=transcribe&output=json`, { method: "POST", body: form2 });
-    if (res.ok) return res;
-  } catch {}
+  const attempts = [
+    // Custom sidecar format
+    () => {
+      const form = new FormData();
+      form.append("file", file);
+      return fetch(`${baseUrl}/transcribe`, { method: "POST", body: form, signal: AbortSignal.timeout(timeout) });
+    },
+    // whisper-asr-webservice format
+    () => {
+      const form = new FormData();
+      form.append("audio_file", file);
+      return fetch(`${baseUrl}/asr?task=transcribe&output=json`, { method: "POST", body: form, signal: AbortSignal.timeout(timeout) });
+    },
+    // OpenAI format
+    () => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("model", "whisper-1");
+      return fetch(`${baseUrl}/v1/audio/transcriptions`, { method: "POST", body: form, signal: AbortSignal.timeout(timeout) });
+    },
+  ];
 
-  // Try OpenAI format
-  const form3 = new FormData();
-  form3.append("file", file);
-  form3.append("model", "whisper-1");
-  try {
-    const res = await fetch(`${baseUrl}/v1/audio/transcriptions`, { method: "POST", body: form3 });
-    if (res.ok) return res;
-  } catch {}
+  for (const attempt of attempts) {
+    try {
+      const res = await attempt();
+      if (!res.ok) continue;
+      // Verify response is actually JSON, not an HTML error page
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/html")) continue;
+      return res;
+    } catch {}
+  }
 
-  throw new Error("All Whisper API formats failed");
+  throw new Error("Transcription failed — server may have timed out on a long recording");
 }
 
 export async function POST(request: NextRequest) {

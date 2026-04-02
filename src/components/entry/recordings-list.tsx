@@ -4,7 +4,7 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, Trash2, Download, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Recording {
   id: string;
@@ -23,6 +23,18 @@ function formatDuration(seconds: number | null): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+async function downloadRecording(id: string, date: string) {
+  const res = await fetch(`/api/voice/file/${id}`);
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `moirai-recording-${date}-${id.slice(0, 6)}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function RecordingsList({ recordings, onDelete }: RecordingsListProps) {
@@ -49,14 +61,26 @@ export function RecordingsList({ recordings, onDelete }: RecordingsListProps) {
                   {(() => { try { return format(new Date(rec.createdAt), "MMM d, h:mm a"); } catch { return ""; } })()}
                 </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-destructive hover:text-destructive"
-                onClick={() => onDelete(rec.id)}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => downloadRecording(rec.id, rec.createdAt.split("T")[0] || "unknown")}
+                  title="Download recording"
+                >
+                  <Download className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive hover:text-destructive"
+                  onClick={() => onDelete(rec.id)}
+                  title="Delete recording"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
             <audio src={`/api/voice/file/${rec.id}`} controls className="w-full h-8" preload="none" />
             {rec.transcription && (
