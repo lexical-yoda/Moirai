@@ -121,60 +121,70 @@ The app works fully without AI. To enable AI features, configure endpoints in **
 
 ### llama.cpp (recommended for self-hosting)
 
-```bash
-# 1. Download a GGUF model
-# Example: Llama 3.2 3B from https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF
+Download a GGUF model (e.g., [Llama 3.1 8B Instruct](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF)) and place it in a models directory.
 
-# 2. Start llama-server with embeddings enabled
-llama-server \
-  --model /path/to/model.gguf \
-  --host 0.0.0.0 \
-  --port 8080 \
-  --embeddings \
-  --ctx-size 4096 \
-  --n-gpu-layers 99
-
-# 3. In Moirai Settings > AI/LLM:
-#    Provider: llama-server
-#    Endpoint: http://<machine-ip>:8080
-#    Click Test
+```yaml
+# docker-compose.yml
+services:
+  llama-cpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    ports:
+      - "8080:8080"
+    volumes:
+      - /path/to/models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      -m /models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+      --host 0.0.0.0
+      --port 8080
+      -ngl 99
+      -c 4096
+    restart: unless-stopped
 ```
 
-For better semantic search, run a dedicated embedding model:
-
 ```bash
-llama-server \
-  --model /path/to/nomic-embed-text-v1.5.Q8_0.gguf \
-  --host 0.0.0.0 \
-  --port 8081 \
-  --embeddings
-
-# In Moirai Settings > Embeddings:
-#    Endpoint: http://<machine-ip>:8081
-#    Model: nomic-embed-text
+docker compose up -d
 ```
+
+In Moirai **Settings > AI/LLM**: Provider `llama-server`, Endpoint `http://<machine-ip>:8080`, click **Test**.
+
+For CPU-only (no GPU), use `ghcr.io/ggml-org/llama.cpp:server` and remove the `deploy` block.
 
 ### Ollama
 
-```bash
-ollama serve
-ollama pull llama3.2
+```yaml
+# docker-compose.yml
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
 
-# In Moirai Settings:
-#    Provider: Ollama
-#    Endpoint: http://<machine-ip>:11434
-#    Model: llama3.2
+volumes:
+  ollama-data:
 ```
+
+```bash
+docker compose up -d
+docker exec ollama ollama pull llama3.2
+```
+
+In Moirai **Settings**: Provider `Ollama`, Endpoint `http://<machine-ip>:11434`, Model `llama3.2`.
 
 ### LM Studio
 
-```bash
-# Start LM Studio, load a model, start local server (default port 1234)
+Download [LM Studio](https://lmstudio.ai), load a model, and start the local server (default port 1234).
 
-# In Moirai Settings:
-#    Provider: LM Studio
-#    Endpoint: http://localhost:1234
-```
+In Moirai **Settings**: Provider `LM Studio`, Endpoint `http://<machine-ip>:1234`.
 
 ## Setting Up Voice Transcription (Whisper)
 
