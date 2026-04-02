@@ -22,6 +22,7 @@ export async function chatCompletion(
   options?: { temperature?: number; maxTokens?: number; responseFormat?: { type: string } }
 ): Promise<ChatResponse> {
   const url = `${config.endpointUrl}/v1/chat/completions`;
+  console.log(`[AI Client] POST ${url} (timeout: 180s)`);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -33,7 +34,7 @@ export async function chatCompletion(
   const body: Record<string, unknown> = {
     messages,
     temperature: options?.temperature ?? 0.3,
-    max_tokens: options?.maxTokens ?? 2048,
+    max_tokens: options?.maxTokens ?? 4096,
   };
   if (config.modelName) {
     body.model = config.modelName;
@@ -46,7 +47,7 @@ export async function chatCompletion(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(300_000),
   });
 
   if (!res.ok) {

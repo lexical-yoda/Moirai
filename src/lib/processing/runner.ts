@@ -238,26 +238,39 @@ async function handleFormatting(task: TaskRecord) {
 
   const { getAIConfig } = await import("@/lib/ai/config");
   const { chatCompletion } = await import("@/lib/ai/client");
-  const { contentFormattingPrompt, titleGenerationPrompt } = await import("@/lib/ai/prompts");
+  const { contentFormattingPrompt } = await import("@/lib/ai/prompts");
 
   const config = await getAIConfig(task.userId);
   const plaintext = entry.content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   if (plaintext.length < 20) return;
 
-  // Format content
+  // Format content + generate title in one JSON call
   const formatMessages = contentFormattingPrompt(plaintext);
-  const formatResponse = await chatCompletion(config, formatMessages, { temperature: 0.3 });
+  const formatResponse = await chatCompletion(config, formatMessages, {
+    temperature: 0.3,
+    responseFormat: { type: "json_object" },
+  });
+
+  let parsed: { formatted: string; title: string };
+  try {
+    parsed = JSON.parse(formatResponse.content);
+  } catch {
+    const match = formatResponse.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (match) {
+      parsed = JSON.parse(match[1]);
+    } else {
+      console.error("[Processing] Formatting: no JSON in response:", formatResponse.content.slice(0, 300));
+      throw new Error("Failed to parse formatting response");
+    }
+  }
 
   const updates: Record<string, unknown> = {
-    formattedContent: formatResponse.content,
+    formattedContent: parsed.formatted || formatResponse.content,
     updatedAt: new Date(),
   };
 
-  // Generate title if empty
-  if (!entry.title) {
-    const titleMessages = titleGenerationPrompt(plaintext);
-    const titleResponse = await chatCompletion(config, titleMessages, { temperature: 0.5 });
-    updates.generatedTitle = titleResponse.content.replace(/^["']|["']$/g, "").trim();
+  if (!entry.title && parsed.title) {
+    updates.generatedTitle = parsed.title.replace(/^["']|["']$/g, "").trim();
   }
 
   // Format therapy content if present
@@ -265,8 +278,16 @@ async function handleFormatting(task: TaskRecord) {
     const therapyPlain = entry.therapyContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     if (therapyPlain.length >= 20) {
       const therapyMessages = contentFormattingPrompt(therapyPlain);
-      const therapyResponse = await chatCompletion(config, therapyMessages, { temperature: 0.3 });
-      updates.therapyFormattedContent = therapyResponse.content;
+      const therapyResponse = await chatCompletion(config, therapyMessages, {
+        temperature: 0.3,
+        responseFormat: { type: "json_object" },
+      });
+      try {
+        const therapyParsed = JSON.parse(therapyResponse.content);
+        updates.therapyFormattedContent = therapyParsed.formatted || therapyResponse.content;
+      } catch {
+        updates.therapyFormattedContent = therapyResponse.content;
+      }
     }
   }
 
