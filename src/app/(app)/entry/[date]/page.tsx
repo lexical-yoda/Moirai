@@ -12,6 +12,7 @@ import { InsightsPanel } from "@/components/entry/insights-panel";
 import { SimilarEntries } from "@/components/entry/similar-entries";
 import { RecordingsList } from "@/components/entry/recordings-list";
 import { EntryLinks } from "@/components/entry/entry-links";
+import { ActivityChecklist } from "@/components/entry/activity-checklist";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -391,6 +392,9 @@ export default function EntryPage() {
             onRemoveTag={handleRemoveTag}
           />
         </div>
+
+        {/* Activities */}
+        <ActivityChecklist date={date} entryId={entry?.id || null} />
 
         {/* Recordings — visible on all screen sizes */}
         {entry && recordings.length > 0 && (

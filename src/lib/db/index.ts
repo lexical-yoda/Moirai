@@ -133,6 +133,22 @@ function initializeTables(db: Database.Database) {
       generated_at INTEGER NOT NULL, created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS activities (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, emoji TEXT DEFAULT '', type TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+      entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
+      date TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(activity_id, date);
+
     CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
       title, content, content='entries', content_rowid='rowid'
     );

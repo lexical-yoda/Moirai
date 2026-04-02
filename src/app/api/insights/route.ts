@@ -4,16 +4,22 @@ import { entries, insights } from "@/lib/db/schema";
 import { eq, and, gte, sql, count, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { safeJsonParse } from "@/lib/json";
-import { subDays, format, startOfMonth } from "date-fns";
+import { subDays, format, startOfMonth, endOfMonth } from "date-fns";
 
 // GET /api/insights — aggregated dashboard data
+// Supports ?from=YYYY-MM-DD&to=YYYY-MM-DD for date range filtering
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = session.user.id;
+  const { searchParams } = new URL(request.url);
   const now = new Date();
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd");
+
+  // Default range: current month
+  const from = searchParams.get("from") || format(startOfMonth(now), "yyyy-MM-dd");
+  const to = searchParams.get("to") || format(endOfMonth(now), "yyyy-MM-dd");
+  const monthStart = from;
 
   // Total entries
   const totalResult = await db
@@ -22,18 +28,20 @@ export async function GET(request: NextRequest) {
     .where(eq(entries.userId, userId));
   const totalEntries = totalResult[0]?.count || 0;
 
-  // Entries this month
-  const monthResult = await db
+  // Entries in selected range
+  const { lte: lteFn } = await import("drizzle-orm");
+  const rangeResult = await db
     .select({ count: count() })
     .from(entries)
-    .where(and(eq(entries.userId, userId), gte(entries.date, monthStart)));
-  const monthEntries = monthResult[0]?.count || 0;
+    .where(and(eq(entries.userId, userId), gte(entries.date, from), lteFn(entries.date, to)));
+  const rangeEntries = rangeResult[0]?.count || 0;
 
-  // Average mood score
+  // Average mood in range
   const moodResult = await db
     .select({ avg: sql<number>`avg(${insights.moodScore})` })
     .from(insights)
-    .where(eq(insights.userId, userId));
+    .innerJoin(entries, eq(insights.entryId, entries.id))
+    .where(and(eq(insights.userId, userId), gte(entries.date, from), lteFn(entries.date, to)));
   const avgMood = moodResult[0]?.avg ?? null;
 
   // Streak calculation
@@ -60,8 +68,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Mood trend (last 30 days)
-  const thirtyDaysAgo = format(subDays(now, 30), "yyyy-MM-dd");
+  // Mood trend (in selected range)
   const moodTrend = await db
     .select({
       date: entries.date,
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest) {
     })
     .from(insights)
     .innerJoin(entries, eq(insights.entryId, entries.id))
-    .where(and(eq(insights.userId, userId), gte(entries.date, thirtyDaysAgo)))
+    .where(and(eq(insights.userId, userId), gte(entries.date, from), lteFn(entries.date, to)))
     .orderBy(entries.date);
 
   // Top themes (last 500 entries to bound memory)
@@ -118,7 +125,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     totalEntries,
-    monthEntries,
+    rangeEntries,
     avgMood,
     streak,
     totalWords,
@@ -126,5 +133,6 @@ export async function GET(request: NextRequest) {
     topThemes,
     recentEntries: recent,
     heatmapData,
+    dateRange: { from, to },
   });
 }

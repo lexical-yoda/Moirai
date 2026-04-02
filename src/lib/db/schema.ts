@@ -174,3 +174,29 @@ export const reflections = sqliteTable("reflections", {
   generatedAt: integer("generated_at", { mode: "timestamp" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
+
+// ── Activity tracking ──────────────────────────────────────────────────────
+
+export const activities = sqliteTable("activities", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  emoji: text("emoji").default(""),
+  type: text("type").notNull(), // "good" | "bad"
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const activityLogs = sqliteTable("activity_logs", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  activityId: text("activity_id").notNull().references(() => activities.id, { onDelete: "cascade" }),
+  entryId: text("entry_id").references(() => entries.id, { onDelete: "set null" }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  completed: integer("completed", { mode: "boolean" }).notNull().default(false),
+  source: text("source").notNull().default("manual"), // "manual" | "ai"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("activity_logs_unique_idx").on(table.activityId, table.date),
+]);

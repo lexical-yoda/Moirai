@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users } from "lucide-react";
+import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users, Target, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useSession } from "@/lib/auth/client";
 
@@ -271,6 +271,10 @@ export default function SettingsPage() {
         </Button>
       </div>
 
+      {/* Activity Tracking */}
+      <Separator />
+      <ActivitySettings />
+
       {/* Admin Section */}
       {isAdmin && (
         <>
@@ -359,5 +363,134 @@ export default function SettingsPage() {
         </>
       )}
     </div>
+  );
+}
+
+// ── Activity Settings Component ──────────────────────────────────────────
+
+interface Activity {
+  id: string;
+  name: string;
+  emoji: string;
+  type: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+function ActivitySettings() {
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newEmoji, setNewEmoji] = useState("");
+  const [newType, setNewType] = useState<"good" | "bad">("good");
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/activities");
+        if (res.ok) setActivities(await res.json());
+      } finally { setLoading(false); }
+    }
+    load();
+  }, []);
+
+  async function handleAdd() {
+    if (!newName.trim()) return;
+    setAdding(true);
+    try {
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), emoji: newEmoji, type: newType }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setActivities((prev) => [...prev, created]);
+        setNewName("");
+        setNewEmoji("");
+        toast.success("Activity added");
+      }
+    } finally { setAdding(false); }
+  }
+
+  async function handleToggleActive(id: string, active: boolean) {
+    await fetch(`/api/activities/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: !active }),
+    });
+    setActivities((prev) => prev.map((a) => a.id === id ? { ...a, active: !active } : a));
+  }
+
+  async function handleDelete(id: string) {
+    await fetch(`/api/activities/${id}`, { method: "DELETE" });
+    setActivities((prev) => prev.filter((a) => a.id !== id));
+    toast.success("Activity deleted");
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Target className="h-5 w-5" /> Activity Tracking</CardTitle>
+        <CardDescription>
+          Track habits and activities daily — checked manually or auto-detected from journal entries
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Add new activity */}
+        <div className="flex gap-2 items-end">
+          <div className="w-16">
+            <Label className="text-xs">Emoji</Label>
+            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="💪" className="text-center" maxLength={4} />
+          </div>
+          <div className="flex-1">
+            <Label className="text-xs">Activity</Label>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Gym, Reading, Meditation" onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
+          </div>
+          <div className="w-24">
+            <Label className="text-xs">Type</Label>
+            <div className="flex">
+              <Button size="sm" variant={newType === "good" ? "default" : "outline"} className="rounded-r-none text-xs h-9 flex-1" onClick={() => setNewType("good")}>Good</Button>
+              <Button size="sm" variant={newType === "bad" ? "default" : "outline"} className="rounded-l-none text-xs h-9 flex-1" onClick={() => setNewType("bad")}>Bad</Button>
+            </div>
+          </div>
+          <Button onClick={handleAdd} disabled={adding || !newName.trim()} size="sm" className="h-9 gap-1">
+            <Plus className="h-4 w-4" /> Add
+          </Button>
+        </div>
+
+        {/* Activities list */}
+        {loading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : activities.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No activities yet. Add one above to start tracking.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {activities.map((activity) => (
+              <div key={activity.id} className="flex items-center justify-between rounded-md border p-2.5 group">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg w-7 text-center">{activity.emoji || (activity.type === "good" ? "✅" : "❌")}</span>
+                  <span className={`text-sm font-medium ${!activity.active ? "line-through text-muted-foreground" : ""}`}>
+                    {activity.name}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activity.type === "good" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+                    {activity.type}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleToggleActive(activity.id, activity.active)}>
+                    {activity.active ? "Pause" : "Resume"}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(activity.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

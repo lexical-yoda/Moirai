@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
-import { insights, tags, entryTags } from "@/lib/db/schema";
+import { insights, tags, entryTags, activities, activityLogs, entries } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getAIConfig } from "./config";
 import { chatCompletion } from "./client";
-import { insightExtractionPrompt } from "./prompts";
+import { insightExtractionPrompt, activityDetectionPrompt } from "./prompts";
 
 interface ExtractedInsight {
   mood: string;
@@ -25,7 +25,7 @@ function stripHtml(html: string): string {
 export async function extractInsights(userId: string, entryId: string, content: string) {
   try {
     const plaintext = stripHtml(content);
-    if (plaintext.length < 20) return; // Skip very short entries
+    if (plaintext.length < 20) return;
 
     const config = await getAIConfig(userId);
     const messages = insightExtractionPrompt(plaintext);
@@ -39,7 +39,6 @@ export async function extractInsights(userId: string, entryId: string, content: 
     try {
       parsed = JSON.parse(response.content);
     } catch {
-      // Try to extract JSON from markdown code blocks
       const match = response.content.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (match) {
         parsed = JSON.parse(match[1]);
@@ -50,7 +49,7 @@ export async function extractInsights(userId: string, entryId: string, content: 
 
     const now = new Date();
 
-    // Upsert insight (delete existing for this entry, insert new)
+    // Upsert insight
     await db.delete(insights).where(eq(insights.entryId, entryId));
     await db.insert(insights).values({
       id: nanoid(),
@@ -96,7 +95,85 @@ export async function extractInsights(userId: string, entryId: string, content: 
         }
       }
     }
+
+    // Auto-detect activities
+    await detectActivities(userId, entryId, plaintext, config);
   } catch (err) {
     console.error("[AI Extract] Failed to extract insights:", err);
+  }
+}
+
+/**
+ * Detect which tracked activities are mentioned in the entry.
+ */
+async function detectActivities(userId: string, entryId: string, plaintext: string, config: Awaited<ReturnType<typeof getAIConfig>>) {
+  try {
+    // Get user's active activities
+    const userActivities = await db.query.activities.findMany({
+      where: and(eq(activities.userId, userId), eq(activities.active, true)),
+    });
+
+    if (userActivities.length === 0) return;
+
+    // Get entry date
+    const entry = await db.query.entries.findFirst({
+      where: eq(entries.id, entryId),
+      columns: { date: true },
+    });
+    if (!entry) return;
+
+    const activityNames = userActivities.map((a) => a.name);
+    const messages = activityDetectionPrompt(plaintext, activityNames);
+
+    const response = await chatCompletion(config, messages, {
+      temperature: 0.1,
+      responseFormat: { type: "json_object" },
+    });
+
+    let detected: Record<string, boolean>;
+    try {
+      detected = JSON.parse(response.content);
+    } catch {
+      const match = response.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (match) {
+        detected = JSON.parse(match[1]);
+      } else {
+        return;
+      }
+    }
+
+    // Update activity logs for detected activities
+    for (const activity of userActivities) {
+      if (detected[activity.name] !== true) continue;
+
+      // Check if already logged (don't override manual entries)
+      const existing = await db.query.activityLogs.findFirst({
+        where: and(eq(activityLogs.activityId, activity.id), eq(activityLogs.date, entry.date)),
+      });
+
+      if (existing) {
+        // Only update if it was previously AI-set or not completed
+        if (existing.source === "ai" || !existing.completed) {
+          await db.update(activityLogs).set({
+            completed: true,
+            source: "ai",
+            entryId,
+          }).where(eq(activityLogs.id, existing.id));
+        }
+      } else {
+        await db.insert(activityLogs).values({
+          id: nanoid(),
+          userId,
+          activityId: activity.id,
+          entryId,
+          date: entry.date,
+          completed: true,
+          source: "ai",
+          createdAt: new Date(),
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[AI Extract] Activity detection failed:", err);
   }
 }
