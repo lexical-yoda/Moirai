@@ -63,7 +63,7 @@ export const userSettings = sqliteTable("user_settings", {
   userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
   encryptionPassphraseHash: text("encryption_passphrase_hash"),
   aiProvider: text("ai_provider").default("llama-server"), // llama-server | ollama | lm-studio | openai-compatible
-  aiEndpointUrl: text("ai_endpoint_url").default("http://localhost:8080"),
+  aiEndpointUrl: text("ai_endpoint_url"),
   aiModelName: text("ai_model_name"),
   aiApiKey: text("ai_api_key"), // encrypted
   embeddingEndpointUrl: text("embedding_endpoint_url"),

@@ -25,18 +25,23 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
-    const result = await signIn.email({
-      email,
-      password,
-    });
+    try {
+      const result = await signIn.email({
+        email,
+        password,
+      });
 
-    if (result.error) {
-      setError(result.error.message || "Invalid email or password");
+      if (result.error) {
+        setError(result.error.message || "Invalid email or password");
+        setLoading(false);
+        return;
+      }
+
+      router.push(callbackUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
       setLoading(false);
-      return;
     }
-
-    router.push(callbackUrl);
   }
 
   return (
