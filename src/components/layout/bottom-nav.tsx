@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Calendar, PenLine, Search, Settings } from "lucide-react";
+import { LayoutDashboard, Calendar, PenLine, Search, Settings, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
-const navItems = [
+const baseNavItems = [
   { href: "/", label: "Home", icon: LayoutDashboard },
-  { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/entry", label: "Write", icon: PenLine },
   { href: "/search", label: "Search", icon: Search },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 function todayDate() {
@@ -20,6 +19,13 @@ function todayDate() {
 
 export function BottomNav() {
   const pathname = usePathname();
+  const therapyEnabled = useTherapyEnabled();
+
+  const navItems = [
+    ...baseNavItems,
+    ...(therapyEnabled ? [{ href: "/therapy", label: "Therapy", icon: Heart }] : []),
+    { href: "/settings", label: "Settings", icon: Settings },
+  ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">

@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, sqlite } from "@/lib/db";
 import { entries, entryVersions, insights } from "@/lib/db/schema";
-import { eq, and, like } from "drizzle-orm";
+import { eq, and, like, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import { contentHash } from "@/lib/encryption";
 import { entrySchema, parseBody } from "@/lib/validation";
-import { extractInsights } from "@/lib/ai/extract";
-import { embedEntry } from "@/lib/ai/embed-entry";
 import { parseJsonBody } from "@/lib/api-utils";
+import { queueEntryTasks, cancelPendingTasks, processQueue } from "@/lib/processing/runner";
 
 async function getUser(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -50,8 +49,9 @@ export async function GET(request: NextRequest) {
 
   // Attach mood scores from insights for calendar view
   if (month && result.length > 0) {
+    const entryIds = result.map((e) => e.id);
     const entryInsights = await db.query.insights.findMany({
-      where: eq(insights.userId, user.id),
+      where: and(eq(insights.userId, user.id), inArray(insights.entryId, entryIds)),
       columns: { entryId: true, moodScore: true },
     });
 
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { date, title, content, templateUsed } = parsed.data;
+  const { date, title, content, templateUsed, therapyContent, hasTherapyNotes, isSessionDay } = parsed.data;
 
   const now = new Date();
   const wc = wordCount(content || "");
@@ -111,9 +111,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      sqlite.prepare(
-        "UPDATE entries SET title = ?, content = ?, word_count = ?, updated_at = ? WHERE id = ?"
-      ).run(title, content, wc, Math.floor(now.getTime() / 1000), current.id);
+      const updates = ["title = ?", "content = ?", "word_count = ?", "updated_at = ?"];
+      const values: unknown[] = [title, content, wc, Math.floor(now.getTime() / 1000)];
+
+      if (therapyContent !== undefined) { updates.push("therapy_content = ?"); values.push(therapyContent); }
+      if (hasTherapyNotes !== undefined) { updates.push("has_therapy_notes = ?"); values.push(hasTherapyNotes ? 1 : 0); }
+      if (isSessionDay !== undefined) { updates.push("is_session_day = ?"); values.push(isSessionDay ? 1 : 0); }
+
+      values.push(current.id);
+      sqlite.prepare(`UPDATE entries SET ${updates.join(", ")} WHERE id = ?`).run(...values);
     });
 
     saveVersion();
@@ -122,10 +128,12 @@ export async function POST(request: NextRequest) {
       where: eq(entries.id, current.id),
     });
 
-    // Fire-and-forget AI extraction + embedding
+    // Queue background processing tasks
     if (content) {
-      extractInsights(user.id, current.id, content).catch((err) => console.error("[AI Extract]", err));
-      embedEntry(user.id, current.id, content).catch((err) => console.error("[Embed]", err));
+      cancelPendingTasks(user.id, current.id).catch((err) => console.error("[Processing] Failed to cancel pending tasks:", err));
+      queueEntryTasks(user.id, current.id, content)
+        .then(() => processQueue(user.id))
+        .catch((err) => console.error("[Processing]", err));
     }
 
     return NextResponse.json(updated);
@@ -142,18 +150,35 @@ export async function POST(request: NextRequest) {
       content: content || "",
       wordCount: wc,
       templateUsed: templateUsed || null,
+      therapyContent: therapyContent || null,
+      hasTherapyNotes: hasTherapyNotes || false,
+      isSessionDay: isSessionDay || false,
       createdAt: now,
       updatedAt: now,
     });
-  } catch {
-    // Unique constraint violation — another request created it concurrently, retry as update
+  } catch (err) {
+    // Likely unique constraint violation — another request created it concurrently, retry as update
+    console.warn("[Entries] Insert conflict, retrying as update:", err instanceof Error ? err.message : err);
     existing = await db.query.entries.findFirst({
       where: and(eq(entries.userId, user.id), eq(entries.date, date)),
     });
     if (existing) {
       await db.update(entries)
-        .set({ title, content, wordCount: wc, updatedAt: now })
+        .set({
+          title, content, wordCount: wc, updatedAt: now,
+          therapyContent: therapyContent || null,
+          hasTherapyNotes: hasTherapyNotes || false,
+          isSessionDay: isSessionDay || false,
+        })
         .where(eq(entries.id, existing.id));
+
+      // Queue processing tasks for the concurrent-update path too
+      if (content) {
+        queueEntryTasks(user.id, existing.id, content)
+          .then(() => processQueue(user.id))
+          .catch((err) => console.error("[Processing]", err));
+      }
+
       return NextResponse.json(await db.query.entries.findFirst({ where: eq(entries.id, existing.id) }));
     }
     return NextResponse.json({ error: "Failed to create entry" }, { status: 500 });
@@ -163,10 +188,11 @@ export async function POST(request: NextRequest) {
     where: eq(entries.id, id),
   });
 
-  // Fire-and-forget AI extraction + embedding
+  // Queue background processing tasks
   if (content) {
-    extractInsights(user.id, id, content).catch((err) => console.error("[AI Extract]", err));
-    embedEntry(user.id, id, content).catch((err) => console.error("[Embed]", err));
+    queueEntryTasks(user.id, id, content)
+      .then(() => processQueue(user.id))
+      .catch((err) => console.error("[Processing]", err));
   }
 
   return NextResponse.json(created, { status: 201 });

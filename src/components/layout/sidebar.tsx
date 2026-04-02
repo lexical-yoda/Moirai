@@ -9,20 +9,27 @@ import {
   BookOpen,
   Settings,
   PenLine,
+  Heart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
-const navItems = [
+const baseNavItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/entry", label: "Today", icon: PenLine },
   { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/search", label: "Search", icon: Search },
   { href: "/reflections", label: "Reflections", icon: BookOpen },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+const therapyNavItem = { href: "/therapy", label: "Therapy", icon: Heart };
+const settingsNavItem = { href: "/settings", label: "Settings", icon: Settings };
 
 export function Sidebar() {
   const pathname = usePathname();
+  const therapyEnabled = useTherapyEnabled();
+
+  const navItems = [...baseNavItems, ...(therapyEnabled ? [therapyNavItem] : []), settingsNavItem];
 
   return (
     <aside className="hidden md:flex h-full w-60 flex-col border-r bg-sidebar text-sidebar-foreground">

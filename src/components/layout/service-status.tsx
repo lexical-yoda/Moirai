@@ -16,7 +16,9 @@ export function ServiceStatus() {
       try {
         const res = await fetch("/api/health");
         if (res.ok) setHealth(await res.json());
-      } catch {}
+      } catch (err) {
+        console.error("[ServiceStatus] Health check failed:", err);
+      }
     }
     check();
     const interval = setInterval(check, 60_000);

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users, Target, Plus } from "lucide-react";
+import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users, Target, Plus, Heart } from "lucide-react";
+import { invalidateTherapyCache } from "@/hooks/use-therapy-enabled";
 import { toast } from "sonner";
 import { useSession } from "@/lib/auth/client";
 
@@ -64,6 +65,9 @@ export default function SettingsPage() {
   const [whisperTest, setWhisperTest] = useState<TestResult>(null);
   const [whisperTesting, setWhisperTesting] = useState(false);
 
+  // Therapy
+  const [therapyEnabled, setTherapyEnabled] = useState(false);
+
   useEffect(() => {
     async function load() {
       try {
@@ -76,6 +80,7 @@ export default function SettingsPage() {
         if (data.embeddingEndpointUrl) setEmbeddingEndpointUrl(data.embeddingEndpointUrl);
         if (data.embeddingModelName) setEmbeddingModelName(data.embeddingModelName);
         if (data.whisperEndpointUrl) setWhisperEndpointUrl(data.whisperEndpointUrl);
+        setTherapyEnabled(data.therapyEnabled || false);
       } finally {
         setLoading(false);
       }
@@ -90,7 +95,9 @@ export default function SettingsPage() {
           const usersRes = await fetch("/api/admin/users");
           if (usersRes.ok) setAllUsers(await usersRes.json());
         }
-      } catch {}
+      } catch (err) {
+        console.error("[Settings] Failed to load admin data:", err);
+      }
     }
     load();
   }, []);
@@ -103,11 +110,15 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           aiProvider, aiEndpointUrl, aiModelName, aiApiKey,
-          embeddingEndpointUrl, embeddingModelName, whisperEndpointUrl,
+          embeddingEndpointUrl, embeddingModelName, whisperEndpointUrl, therapyEnabled,
         }),
       });
-      if (res.ok) toast.success("Settings saved");
-      else toast.error("Failed to save settings");
+      if (res.ok) {
+        toast.success("Settings saved");
+        invalidateTherapyCache();
+      } else {
+        toast.error("Failed to save settings");
+      }
     } finally {
       setSaving(false);
     }
@@ -271,6 +282,35 @@ export default function SettingsPage() {
         </Button>
       </div>
 
+      {/* Therapy */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5" /> Therapy Tracking</CardTitle>
+          <CardDescription>
+            Track therapy topics, session notes, and items to discuss
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable Therapy Tracking</p>
+              <p className="text-xs text-muted-foreground">
+                Adds therapy notes section to journal entries and a dedicated therapy page
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={therapyEnabled}
+                onChange={(e) => setTherapyEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-background after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
+            </label>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Activity Tracking */}
       <Separator />
       <ActivitySettings />
@@ -410,6 +450,8 @@ function ActivitySettings() {
         setNewName("");
         setNewEmoji("");
         toast.success("Activity added");
+      } else {
+        toast.error("Failed to add activity");
       }
     } finally { setAdding(false); }
   }
@@ -424,9 +466,13 @@ function ActivitySettings() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/activities/${id}`, { method: "DELETE" });
-    setActivities((prev) => prev.filter((a) => a.id !== id));
-    toast.success("Activity deleted");
+    const res = await fetch(`/api/activities/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setActivities((prev) => prev.filter((a) => a.id !== id));
+      toast.success("Activity deleted");
+    } else {
+      toast.error("Failed to delete activity");
+    }
   }
 
   return (

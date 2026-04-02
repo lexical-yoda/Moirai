@@ -55,7 +55,19 @@ export async function chatCompletion(
     throw new Error("AI service temporarily unavailable");
   }
 
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch (err) {
+    console.error("[AI Client] Failed to parse chat response JSON:", err);
+    throw new Error("Invalid response format from AI service");
+  }
+
+  if (!data?.choices?.[0]?.message?.content || typeof data.choices[0].message.content !== "string") {
+    console.error("[AI Client] Unexpected response structure:", JSON.stringify(data).slice(0, 300));
+    throw new Error("AI service returned an unexpected response format");
+  }
+
   return { content: data.choices[0].message.content };
 }
 
@@ -92,7 +104,19 @@ export async function generateEmbedding(
     throw new Error("Embedding service temporarily unavailable");
   }
 
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch (err) {
+    console.error("[AI Client] Failed to parse embedding response JSON:", err);
+    throw new Error("Invalid response format from embedding service");
+  }
+
+  if (!data?.data?.[0]?.embedding) {
+    console.error("[AI Client] Unexpected embedding response:", JSON.stringify(data).slice(0, 300));
+    throw new Error("Embedding service returned an unexpected response format");
+  }
+
   return { embedding: data.data[0].embedding };
 }
 

@@ -66,6 +66,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid date format" }, { status: 400 });
   }
 
+  // Verify entry belongs to user if provided
+  if (entryId) {
+    const { entries } = await import("@/lib/db/schema");
+    const entry = await db.query.entries.findFirst({
+      where: and(eq(entries.id, entryId), eq(entries.userId, session.user.id)),
+    });
+    if (!entry) return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+  }
+
   // Upsert — find existing or create (scoped by userId)
   const existing = await db.query.activityLogs.findFirst({
     where: and(eq(activityLogs.activityId, activityId), eq(activityLogs.date, date), eq(activityLogs.userId, session.user.id)),

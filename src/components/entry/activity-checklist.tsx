@@ -65,21 +65,41 @@ export function ActivityChecklist({ date, entryId }: ActivityChecklistProps) {
       return next;
     });
 
-    const res = await fetch("/api/activities/logs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        activityId,
-        date,
-        completed: newCompleted,
-        source: "manual",
-        entryId,
-      }),
-    });
+    try {
+      const res = await fetch("/api/activities/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activityId,
+          date,
+          completed: newCompleted,
+          source: "manual",
+          entryId,
+        }),
+      });
 
-    if (res.ok) {
-      const log = await res.json();
-      setLogs((prev) => new Map(prev).set(activityId, log));
+      if (res.ok) {
+        const log = await res.json();
+        setLogs((prev) => new Map(prev).set(activityId, log));
+      } else {
+        // Revert optimistic update
+        setLogs((prev) => {
+          const next = new Map(prev);
+          if (current) next.set(activityId, current);
+          else next.delete(activityId);
+          return next;
+        });
+        console.error("[Activities] Toggle failed:", res.status);
+      }
+    } catch (err) {
+      // Revert on network error
+      setLogs((prev) => {
+        const next = new Map(prev);
+        if (current) next.set(activityId, current);
+        else next.delete(activityId);
+        return next;
+      });
+      console.error("[Activities] Toggle error:", err);
     }
   }
 

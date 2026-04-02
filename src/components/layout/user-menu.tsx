@@ -26,7 +26,7 @@ export function UserMenu() {
     .slice(0, 2);
 
   async function handleSignOut() {
-    try { await signOut(); } catch {}
+    try { await signOut(); } catch (err) { console.error("[Auth] Sign out failed:", err); }
     router.push("/login");
   }
 

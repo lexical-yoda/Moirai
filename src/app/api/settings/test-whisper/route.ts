@@ -25,7 +25,9 @@ export async function POST(request: NextRequest) {
       if (res.ok) {
         return NextResponse.json({ ok: true });
       }
-    } catch {}
+    } catch (err) {
+      console.error("[Settings] Whisper test failed:", err instanceof Error ? err.message : err);
+    }
   }
 
   return NextResponse.json({ ok: false, error: "Connection failed — server not reachable" });

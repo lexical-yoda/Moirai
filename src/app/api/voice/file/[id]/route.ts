@@ -5,8 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
-
-const VOICE_DIR = path.join(process.env.DATABASE_PATH ? path.dirname(process.env.DATABASE_PATH) : "data", "voice");
+import { VOICE_DIR } from "@/lib/constants";
 
 // GET /api/voice/file/[id] — serve audio file
 export async function GET(

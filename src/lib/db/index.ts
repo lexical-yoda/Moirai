@@ -22,12 +22,74 @@ function createDatabase() {
   return sqlite;
 }
 
+function safeAlter(db: Database.Database, sql: string) {
+  try {
+    db.exec(sql);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("duplicate") && !msg.includes("already exists")) {
+      console.warn("[DB] Migration warning:", msg, "| SQL:", sql.slice(0, 100));
+    }
+  }
+}
+
+function migrateExisting(db: Database.Database) {
+  // Add columns that may be missing from older schema versions
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN generated_title TEXT");
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN formatted_content TEXT");
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN has_therapy_notes INTEGER DEFAULT 0");
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN therapy_content TEXT");
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN therapy_formatted_content TEXT");
+  safeAlter(db, "ALTER TABLE entries ADD COLUMN is_session_day INTEGER DEFAULT 0");
+  safeAlter(db, "ALTER TABLE user_settings ADD COLUMN therapy_enabled INTEGER DEFAULT 0");
+
+  // Create tables that may not exist yet
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS therapy_items (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      description TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'medium',
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS processing_tasks (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE,
+      recording_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+      retries INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS activities (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, emoji TEXT DEFAULT '', type TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+      entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
+      date TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(activity_id, date);
+  `);
+
+  // Fix activity_logs unique index to include user_id (safe to attempt — fails if already correct)
+  safeAlter(db, "DROP INDEX IF EXISTS activity_logs_unique_idx");
+  safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(user_id, activity_id, date)");
+}
+
 function initializeTables(db: Database.Database) {
   const exists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
   ).get();
 
-  if (exists) return;
+  if (exists) {
+    migrateExisting(db);
+    return;
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -66,14 +128,18 @@ function initializeTables(db: Database.Database) {
       encryption_passphrase_hash TEXT,
       ai_provider TEXT DEFAULT 'llama-server', ai_endpoint_url TEXT, ai_model_name TEXT, ai_api_key TEXT,
       embedding_endpoint_url TEXT, embedding_model_name TEXT, whisper_endpoint_url TEXT,
+      therapy_enabled INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS user_settings_user_id_unique ON user_settings(user_id);
 
     CREATE TABLE IF NOT EXISTS entries (
       id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      date TEXT NOT NULL, title TEXT DEFAULT '', content TEXT DEFAULT '',
+      date TEXT NOT NULL, title TEXT DEFAULT '', generated_title TEXT,
+      content TEXT DEFAULT '', formatted_content TEXT,
       word_count INTEGER DEFAULT 0, template_used TEXT,
+      has_therapy_notes INTEGER DEFAULT 0, therapy_content TEXT, therapy_formatted_content TEXT,
+      is_session_day INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS entries_user_date_idx ON entries(user_id, date);
@@ -147,7 +213,24 @@ function initializeTables(db: Database.Database) {
       date TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(activity_id, date);
+    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(user_id, activity_id, date);
+
+    CREATE TABLE IF NOT EXISTS therapy_items (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+      description TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'medium',
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS processing_tasks (
+      id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE,
+      recording_id TEXT, type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+      retries INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
       title, content, content='entries', content_rowid='rowid'

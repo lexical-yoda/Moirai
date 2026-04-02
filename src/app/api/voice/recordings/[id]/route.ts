@@ -5,8 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
-
-const VOICE_DIR = path.join(process.env.DATABASE_PATH ? path.dirname(process.env.DATABASE_PATH) : "data", "voice");
+import { VOICE_DIR } from "@/lib/constants";
 
 // DELETE /api/voice/recordings/[id]
 export async function DELETE(
@@ -23,12 +22,13 @@ export async function DELETE(
   });
   if (!recording) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Delete file from disk
-  const filePath = path.join(VOICE_DIR, recording.audioPath);
-  try { fs.unlinkSync(filePath); } catch {}
-
-  // Delete from database
+  // Delete from database first, then clean up file
   await db.delete(voiceRecordings).where(eq(voiceRecordings.id, id));
+
+  const filePath = path.join(VOICE_DIR, recording.audioPath);
+  try { fs.unlinkSync(filePath); } catch (err) {
+    console.warn("[Voice] Failed to delete file:", filePath, err instanceof Error ? err.message : err);
+  }
 
   return NextResponse.json({ success: true });
 }

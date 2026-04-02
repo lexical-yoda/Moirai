@@ -5,8 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
-
-const VOICE_DIR = path.join(process.env.DATABASE_PATH ? path.dirname(process.env.DATABASE_PATH) : "data", "voice");
+import { VOICE_DIR } from "@/lib/constants";
 
 async function getWhisperUrl(userId: string): Promise<string | null> {
   const settings = await db.query.userSettings.findFirst({
@@ -45,10 +44,12 @@ async function tryTranscribe(baseUrl: string, fileBuffer: Buffer, filename: stri
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("text/html")) continue;
       return res;
-    } catch {}
+    } catch (err) {
+      console.error("[Voice] Transcription attempt failed:", err instanceof Error ? err.message : err);
+    }
   }
 
-  throw new Error("Transcription failed");
+  throw new Error("Transcription failed — all API formats returned empty or errored");
 }
 
 // POST /api/voice/recordings/[id]/transcribe — transcribe an existing saved recording
@@ -81,7 +82,8 @@ export async function POST(
   let whisperRes: Response;
   try {
     whisperRes = await tryTranscribe(whisperUrl, fileBuffer, recording.audioPath);
-  } catch {
+  } catch (err) {
+    console.error("[Voice] Whisper service error:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Whisper service unavailable" }, { status: 503 });
   }
 
@@ -101,6 +103,25 @@ export async function POST(
   await db.update(voiceRecordings)
     .set({ transcription: text })
     .where(eq(voiceRecordings.id, id));
+
+  // Also append transcription to the entry content and queue AI processing
+  if (recording.entryId) {
+    const { entries } = await import("@/lib/db/schema");
+    const entry = await db.query.entries.findFirst({ where: eq(entries.id, recording.entryId) });
+    if (entry) {
+      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const newContent = entry.content ? `${entry.content}<p>${escaped}</p>` : `<p>${escaped}</p>`;
+      await db.update(entries)
+        .set({ content: newContent, updatedAt: new Date() })
+        .where(eq(entries.id, recording.entryId));
+
+      // Queue background processing
+      const { queueEntryTasks, processQueue } = await import("@/lib/processing/runner");
+      queueEntryTasks(session.user.id, recording.entryId, newContent)
+        .then(() => processQueue(session.user.id))
+        .catch((err) => console.error("[Processing]", err));
+    }
+  }
 
   return NextResponse.json({ text });
 }

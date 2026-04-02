@@ -25,16 +25,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { Check, Loader2, Trash2, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
 interface Entry {
   id: string;
   date: string;
   title: string;
+  generatedTitle: string | null;
   content: string;
+  formattedContent: string | null;
   wordCount: number;
   templateUsed: string | null;
+  therapyContent: string | null;
+  therapyFormattedContent: string | null;
+  hasTherapyNotes: boolean;
+  isSessionDay: boolean;
 }
 
 interface Tag {
@@ -58,6 +65,8 @@ interface Insight {
   actionItems: string[];
   keyPeople: string[];
   themes: string[];
+  events?: string[];
+  places?: string[];
 }
 
 interface SimilarEntry {
@@ -90,6 +99,18 @@ export default function EntryPage() {
   const [linkedEntries, setLinkedEntries] = useState<{ id: string; date: string; title: string; wordCount: number | null; linkId: string }[]>([]);
   const [editorKey, setEditorKey] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [contentView, setContentView] = useState<"raw" | "formatted">("raw");
+  const [formattedContent, setFormattedContent] = useState("");
+  const [formattedEditorKey, setFormattedEditorKey] = useState(100);
+  const [reformatting, setReformatting] = useState(false);
+  const therapyEnabled = useTherapyEnabled();
+  const [hasTherapyNotes, setHasTherapyNotes] = useState(false);
+  const [isSessionDay, setIsSessionDay] = useState(false);
+  const [therapyContent, setTherapyContent] = useState("");
+  const [therapyEditorKey, setTherapyEditorKey] = useState(200);
+  const [therapyView, setTherapyView] = useState<"raw" | "formatted">("raw");
+  const [therapyFormattedContent, setTherapyFormattedContent] = useState("");
+  const [therapyFormattedEditorKey, setTherapyFormattedEditorKey] = useState(300);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
 
@@ -104,14 +125,18 @@ export default function EntryPage() {
     try {
       const res = await fetch(`/api/voice/recordings?entryId=${entryId}`);
       if (res.ok) setRecordings(await res.json());
-    } catch {}
+    } catch (err) {
+      console.error("[Entry] Failed to load recordings:", err);
+    }
   }
 
   async function loadLinks(entryId: string) {
     try {
       const res = await fetch(`/api/entries/${entryId}/links`);
       if (res.ok) setLinkedEntries(await res.json());
-    } catch {}
+    } catch (err) {
+      console.error("[Entry] Failed to load links:", err);
+    }
   }
 
   // Load insights, similar entries, and recordings for an entry
@@ -160,12 +185,24 @@ export default function EntryPage() {
 
         if (entryData) {
           setEntry(entryData);
-          setTitle(entryData.title || "");
+          setTitle(entryData.title || entryData.generatedTitle || "");
           setContent(entryData.content || "");
+          setFormattedContent(entryData.formattedContent || "");
+          setFormattedEditorKey((k) => k + 1);
           setEditorKey((k) => k + 1);
+          setHasTherapyNotes(entryData.hasTherapyNotes || false);
+          setIsSessionDay(entryData.isSessionDay || false);
+          setTherapyContent(entryData.therapyContent || "");
+          setTherapyFormattedContent(entryData.therapyFormattedContent || "");
+          setTherapyEditorKey((k) => k + 1);
+          setTherapyFormattedEditorKey((k) => k + 1);
 
-          const versionsRes = await fetch(`/api/entries/${entryData.id}/versions`);
+          const [versionsRes, entryTagsRes] = await Promise.all([
+            fetch(`/api/entries/${entryData.id}/versions`),
+            fetch(`/api/tags?entryId=${entryData.id}`),
+          ]);
           setVersions(await versionsRes.json());
+          if (entryTagsRes.ok) setEntryTags(await entryTagsRes.json());
 
           loadSidebarData(entryData.id);
         } else {
@@ -184,14 +221,14 @@ export default function EntryPage() {
   }, [date]);
 
   // Autosave with 2s debounce
-  const save = useCallback(async (titleToSave: string, contentToSave: string) => {
+  const save = useCallback(async (titleToSave: string, contentToSave: string, extraFields?: Record<string, unknown>) => {
     setSaving(true);
     setSaved(false);
     try {
       const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title: titleToSave, content: contentToSave }),
+        body: JSON.stringify({ date, title: titleToSave, content: contentToSave, ...extraFields }),
       });
       const data = await res.json();
       setEntry(data);
@@ -203,7 +240,11 @@ export default function EntryPage() {
         setVersions(await versionsRes.json());
 
         // Refresh insights after save (AI extraction runs async on server)
-        setTimeout(() => loadSidebarData(data.id), 5000);
+        const savedDate = date;
+        setTimeout(() => {
+          // Only refresh if still on the same entry
+          if (savedDate === date) loadSidebarData(data.id);
+        }, 5000);
       }
     } finally {
       setSaving(false);
@@ -235,7 +276,7 @@ export default function EntryPage() {
   function handleTranscription(text: string, newEntryId?: string) {
     // If entry was just created by the voice recorder, update state
     if (newEntryId && !entry) {
-      setEntry({ id: newEntryId, date, title: "", content: `<p>${text}</p>`, wordCount: 0, templateUsed: null });
+      setEntry({ id: newEntryId, date, title: "", generatedTitle: null, content: `<p>${text}</p>`, formattedContent: null, wordCount: 0, templateUsed: null, therapyContent: null, therapyFormattedContent: null, hasTherapyNotes: false, isSessionDay: false });
       setContent(`<p>${text}</p>`);
       setEditorKey((k) => k + 1);
       loadSidebarData(newEntryId);
@@ -258,6 +299,10 @@ export default function EntryPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, entryId: entry?.id }),
     });
+    if (!res.ok) {
+      console.error("[Entry] Failed to add tag:", res.status);
+      return;
+    }
     const tag = await res.json();
     setEntryTags((prev) => [...prev, tag]);
     setAllTags((prev) => prev.some((t) => t.id === tag.id) ? prev : [...prev, tag]);
@@ -280,6 +325,94 @@ export default function EntryPage() {
 
     const versionsRes = await fetch(`/api/entries/${entry.id}/versions`);
     setVersions(await versionsRes.json());
+  }
+
+  function handleTherapyToggle(enabled: boolean) {
+    setHasTherapyNotes(enabled);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes: enabled, therapyContent, isSessionDay }), 1000);
+  }
+
+  function handleSessionDayToggle(enabled: boolean) {
+    setIsSessionDay(enabled);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes, therapyContent, isSessionDay: enabled }), 1000);
+  }
+
+  function handleTherapyContentChange(newContent: string) {
+    setTherapyContent(newContent);
+    if (initialLoadRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes, therapyContent: newContent, isSessionDay }), 2000);
+  }
+
+  async function handleReformat() {
+    if (!entry) return;
+    setReformatting(true);
+    try {
+      await fetch(`/api/entries/${entry.id}/reformat`, { method: "POST" });
+      toast.success("Reformatting queued");
+
+      // Poll with exponential backoff: 5s, 10s, 20s
+      const delays = [5000, 10000, 20000];
+      const entryId = entry.id;
+      for (const delay of delays) {
+        await new Promise((r) => setTimeout(r, delay));
+        try {
+          const res = await fetch(`/api/entries/${entryId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.formattedContent && data.formattedContent !== formattedContent) {
+              setFormattedContent(data.formattedContent);
+              setFormattedEditorKey((k) => k + 1);
+              if (data.generatedTitle && !title) {
+                setTitle(data.generatedTitle);
+                setEntry((prev) => prev ? { ...prev, generatedTitle: data.generatedTitle } : prev);
+              }
+              if (data.therapyFormattedContent) {
+                setTherapyFormattedContent(data.therapyFormattedContent);
+                setTherapyFormattedEditorKey((k) => k + 1);
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("[Entry] Reformat poll error:", err);
+        }
+      }
+    } catch {
+      toast.error("Failed to queue reformatting");
+    } finally {
+      setReformatting(false);
+    }
+  }
+
+  function handleFormattedContentChange(newContent: string) {
+    setFormattedContent(newContent);
+    if (entry) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        await fetch(`/api/entries/${entry.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content, formattedContent: newContent }),
+        });
+      }, 2000);
+    }
+  }
+
+  function handleTherapyFormattedContentChange(newContent: string) {
+    setTherapyFormattedContent(newContent);
+    if (entry) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        await fetch(`/api/entries/${entry.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content, therapyFormattedContent: newContent }),
+        });
+      }, 2000);
+    }
   }
 
   async function handleDelete() {
@@ -366,20 +499,63 @@ export default function EntryPage() {
         </div>
 
         {/* Title */}
-        <Input
-          value={title}
-          onChange={(e) => handleTitleChange(e.target.value)}
-          placeholder="Entry title (optional)"
-          className="border-none text-2xl font-bold shadow-none focus-visible:ring-0 px-0"
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            value={title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            placeholder="Entry title (optional)"
+            className="border-none text-2xl font-bold shadow-none focus-visible:ring-0 px-0"
+          />
+          {!entry?.title && entry?.generatedTitle && (
+            <span title="AI-generated title" className="shrink-0">
+              <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+          )}
+        </div>
+
+        {/* Raw / Formatted tabs */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setContentView("raw")}
+            className={`px-3 py-1 text-sm rounded-md transition-colors ${contentView === "raw" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Raw
+          </button>
+          <button
+            onClick={() => setContentView("formatted")}
+            className={`px-3 py-1 text-sm rounded-md transition-colors ${contentView === "formatted" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Formatted
+          </button>
+          {contentView === "formatted" && entry && (
+            <button
+              onClick={handleReformat}
+              disabled={reformatting}
+              className="ml-auto flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-accent transition-colors disabled:opacity-50"
+              title="Regenerate formatted version"
+            >
+              <RefreshCw className={`h-3 w-3 ${reformatting ? "animate-spin" : ""}`} />
+              {reformatting ? "Formatting..." : "Regenerate"}
+            </button>
+          )}
+        </div>
 
         {/* Editor */}
-        <MarkdownEditor
-          key={editorKey}
-          content={content}
-          onChange={handleContentChange}
-          placeholder="Start writing your thoughts..."
-        />
+        {contentView === "raw" ? (
+          <MarkdownEditor
+            key={editorKey}
+            content={content}
+            onChange={handleContentChange}
+            placeholder="Start writing your thoughts..."
+          />
+        ) : (
+          <MarkdownEditor
+            key={formattedEditorKey}
+            content={formattedContent || "<p><em>No formatted version yet. Save your entry and it will be auto-formatted.</em></p>"}
+            onChange={handleFormattedContentChange}
+            placeholder="Formatted content will appear here..."
+          />
+        )}
 
         {/* Tags */}
         <Separator />
@@ -395,6 +571,70 @@ export default function EntryPage() {
 
         {/* Activities */}
         <ActivityChecklist date={date} entryId={entry?.id || null} />
+
+        {/* Therapy Notes */}
+        {therapyEnabled && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasTherapyNotes}
+                  onChange={(e) => handleTherapyToggle(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <span className="text-sm font-medium">Therapy Notes</span>
+              </label>
+
+              {hasTherapyNotes && (
+                <>
+                  <label className="flex items-center gap-2 cursor-pointer ml-6">
+                    <input
+                      type="checkbox"
+                      checked={isSessionDay}
+                      onChange={(e) => handleSessionDayToggle(e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    <span className="text-sm text-muted-foreground">Session Day</span>
+                  </label>
+
+                  {/* Therapy Raw / Formatted tabs */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setTherapyView("raw")}
+                      className={`px-3 py-1 text-sm rounded-md transition-colors ${therapyView === "raw" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      Raw
+                    </button>
+                    <button
+                      onClick={() => setTherapyView("formatted")}
+                      className={`px-3 py-1 text-sm rounded-md transition-colors ${therapyView === "formatted" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      Formatted
+                    </button>
+                  </div>
+
+                  {therapyView === "raw" ? (
+                    <MarkdownEditor
+                      key={therapyEditorKey}
+                      content={therapyContent}
+                      onChange={handleTherapyContentChange}
+                      placeholder="Write your therapy notes here..."
+                    />
+                  ) : (
+                    <MarkdownEditor
+                      key={therapyFormattedEditorKey}
+                      content={therapyFormattedContent || "<p><em>No formatted version yet.</em></p>"}
+                      onChange={handleTherapyFormattedContentChange}
+                      placeholder="Formatted therapy notes..."
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
 
         {/* Recordings — visible on all screen sizes */}
         {entry && recordings.length > 0 && (

@@ -13,6 +13,8 @@ interface ExtractedInsight {
   actionItems: string[];
   keyPeople: string[];
   themes: string[];
+  events?: string[];
+  places?: string[];
 }
 
 function stripHtml(html: string): string {
@@ -41,8 +43,14 @@ export async function extractInsights(userId: string, entryId: string, content: 
     } catch {
       const match = response.content.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (match) {
-        parsed = JSON.parse(match[1]);
+        try {
+          parsed = JSON.parse(match[1]);
+        } catch {
+          console.error("[AI Extract] Failed to parse code block JSON:", response.content.slice(0, 300));
+          throw new Error("Failed to parse AI response as JSON");
+        }
       } else {
+        console.error("[AI Extract] No JSON found in response:", response.content.slice(0, 300));
         throw new Error("Failed to parse AI response as JSON");
       }
     }
@@ -64,18 +72,32 @@ export async function extractInsights(userId: string, entryId: string, content: 
       extractedAt: now,
     });
 
-    // Auto-create tags from themes
-    if (parsed.themes?.length) {
-      for (const theme of parsed.themes.slice(0, 5)) {
-        const tagName = theme.toLowerCase().trim();
-        if (!tagName) continue;
+    // Auto-create tags from themes, people, events, places
+    const tagEntries: string[] = [];
+    for (const theme of (parsed.themes || []).slice(0, 5)) {
+      tagEntries.push(theme.toLowerCase().trim());
+    }
+    for (const person of (parsed.keyPeople || []).slice(0, 5)) {
+      tagEntries.push(`person:${person.toLowerCase().trim()}`);
+    }
+    for (const event of (parsed.events || []).slice(0, 5)) {
+      tagEntries.push(`event:${event.toLowerCase().trim()}`);
+    }
+    for (const place of (parsed.places || []).slice(0, 5)) {
+      tagEntries.push(`place:${place.toLowerCase().trim()}`);
+    }
 
-        let tag = await db.query.tags.findFirst({
-          where: and(eq(tags.userId, userId), eq(tags.name, tagName)),
-        });
+    for (let tagName of tagEntries) {
+      tagName = tagName.trim();
+      if (!tagName || tagName === "person:" || tagName === "event:" || tagName === "place:") continue;
 
-        if (!tag) {
-          const tagId = nanoid();
+      let tag = await db.query.tags.findFirst({
+        where: and(eq(tags.userId, userId), eq(tags.name, tagName)),
+      });
+
+      if (!tag) {
+        const tagId = nanoid();
+        try {
           await db.insert(tags).values({
             id: tagId,
             userId,
@@ -83,15 +105,24 @@ export async function extractInsights(userId: string, entryId: string, content: 
             isAiGenerated: true,
           });
           tag = await db.query.tags.findFirst({ where: eq(tags.id, tagId) });
+        } catch {
+          // Unique constraint — tag was created by concurrent process, fetch it
+          tag = await db.query.tags.findFirst({
+            where: and(eq(tags.userId, userId), eq(tags.name, tagName)),
+          });
         }
+      }
 
-        if (tag) {
+      if (tag) {
+        try {
           const existing = await db.query.entryTags.findFirst({
             where: and(eq(entryTags.entryId, entryId), eq(entryTags.tagId, tag.id)),
           });
           if (!existing) {
             await db.insert(entryTags).values({ entryId, tagId: tag.id });
           }
+        } catch {
+          // Unique constraint on entryTags — already linked, ignore
         }
       }
     }
@@ -138,6 +169,7 @@ async function detectActivities(userId: string, entryId: string, plaintext: stri
       if (match) {
         detected = JSON.parse(match[1]);
       } else {
+        console.error("[AI Extract] Activity detection: no JSON in response:", response.content.slice(0, 300));
         return;
       }
     }
@@ -148,12 +180,12 @@ async function detectActivities(userId: string, entryId: string, plaintext: stri
 
       // Check if already logged (don't override manual entries)
       const existing = await db.query.activityLogs.findFirst({
-        where: and(eq(activityLogs.activityId, activity.id), eq(activityLogs.date, entry.date)),
+        where: and(eq(activityLogs.userId, userId), eq(activityLogs.activityId, activity.id), eq(activityLogs.date, entry.date)),
       });
 
       if (existing) {
-        // Only update if it was previously AI-set or not completed
-        if (existing.source === "ai" || !existing.completed) {
+        // Only update if it was previously AI-set — never override manual entries
+        if (existing.source === "ai") {
           await db.update(activityLogs).set({
             completed: true,
             source: "ai",

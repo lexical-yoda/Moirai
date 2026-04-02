@@ -69,6 +69,7 @@ export const userSettings = sqliteTable("user_settings", {
   embeddingEndpointUrl: text("embedding_endpoint_url"),
   embeddingModelName: text("embedding_model_name"),
   whisperEndpointUrl: text("whisper_endpoint_url"),
+  therapyEnabled: integer("therapy_enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
@@ -78,9 +79,15 @@ export const entries = sqliteTable("entries", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(), // YYYY-MM-DD
   title: text("title").default(""),
-  content: text("content").default(""), // markdown, encrypted at rest
+  generatedTitle: text("generated_title"),
+  content: text("content").default(""), // raw HTML from editor
+  formattedContent: text("formatted_content"), // LLM-formatted version
   wordCount: integer("word_count").default(0),
   templateUsed: text("template_used"),
+  hasTherapyNotes: integer("has_therapy_notes", { mode: "boolean" }).default(false),
+  therapyContent: text("therapy_content"), // raw therapy notes
+  therapyFormattedContent: text("therapy_formatted_content"), // LLM-formatted therapy
+  isSessionDay: integer("is_session_day", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
@@ -198,5 +205,35 @@ export const activityLogs = sqliteTable("activity_logs", {
   source: text("source").notNull().default("manual"), // "manual" | "ai"
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 }, (table) => [
-  uniqueIndex("activity_logs_unique_idx").on(table.activityId, table.date),
+  uniqueIndex("activity_logs_unique_idx").on(table.userId, table.activityId, table.date),
 ]);
+
+// ── Therapy tracking ───────────────────────────────────────────────────────
+
+export const therapyItems = sqliteTable("therapy_items", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entryId: text("entry_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  priority: text("priority").notNull().default("medium"), // "high" | "medium" | "low"
+  status: text("status").notNull().default("pending"), // "pending" | "discussed" | "resolved"
+  sessionEntryId: text("session_entry_id").references(() => entries.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+// ── Background processing ──────────────────────────────────────────────────
+
+export const processingTasks = sqliteTable("processing_tasks", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entryId: text("entry_id").references(() => entries.id, { onDelete: "cascade" }),
+  recordingId: text("recording_id"),
+  type: text("type").notNull(), // "transcription" | "formatting" | "insights" | "activities" | "therapy" | "embedding"
+  status: text("status").notNull().default("pending"), // "pending" | "running" | "completed" | "failed"
+  retries: integer("retries").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});

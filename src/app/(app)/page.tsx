@@ -9,7 +9,9 @@ import { TopicCloud } from "@/components/dashboard/topic-cloud";
 import { RecentEntries } from "@/components/dashboard/recent-entries";
 import { MoodHeatmap } from "@/components/dashboard/mood-heatmap";
 import { ActivityGrid } from "@/components/dashboard/activity-grid";
-import { PenLine, Calendar, TrendingUp, Flame, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { PenLine, Calendar, TrendingUp, Flame, Loader2, ChevronLeft, ChevronRight, Heart } from "lucide-react";
+import Link from "next/link";
+import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
 interface DashboardData {
   totalEntries: number;
@@ -54,6 +56,8 @@ export default function DashboardPage() {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const therapyEnabled = useTherapyEnabled();
+  const [therapyPending, setTherapyPending] = useState(0);
 
   const from = format(startOfMonth(currentMonth), "yyyy-MM-dd");
   const to = format(endOfMonth(currentMonth), "yyyy-MM-dd");
@@ -68,6 +72,17 @@ export default function DashboardPage() {
       ]);
 
       if (insightsRes.ok) setData(await insightsRes.json());
+
+      // Load therapy pending count
+      try {
+        const therapyRes = await fetch("/api/therapy?status=pending");
+        if (therapyRes.ok) {
+          const items = await therapyRes.json();
+          setTherapyPending(items.length);
+        }
+      } catch (err) {
+        console.error("[Dashboard] Failed to load therapy data:", err);
+      }
       if (activitiesRes.ok) {
         const acts = await activitiesRes.json();
         setActivities(acts.filter((a: Activity) => a.active !== false));
@@ -158,6 +173,20 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">days in a row</p>
           </CardContent>
         </Card>
+        {therapyEnabled && (
+          <Link href="/therapy">
+            <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Therapy</CardTitle>
+                <Heart className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{therapyPending}</div>
+                <p className="text-xs text-muted-foreground">pending items</p>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
       </div>
 
       {/* Activity Grid */}

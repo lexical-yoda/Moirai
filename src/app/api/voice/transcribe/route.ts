@@ -52,7 +52,9 @@ async function tryTranscribe(baseUrl: string, file: Blob): Promise<Response> {
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("text/html")) continue;
       return res;
-    } catch {}
+    } catch (err) {
+      console.error("[Voice] Transcription attempt failed:", err instanceof Error ? err.message : err);
+    }
   }
 
   throw new Error("Transcription failed — server may have timed out on a long recording");

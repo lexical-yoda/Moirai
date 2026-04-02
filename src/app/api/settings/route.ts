@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     embeddingModelName: settings?.embeddingModelName || "",
     whisperEndpointUrl: settings?.whisperEndpointUrl || defaultWhisper,
     hasApiKey: !!settings?.aiApiKey,
+    therapyEnabled: settings?.therapyEnabled || false,
   });
 }
 
@@ -39,7 +40,7 @@ export async function PUT(request: NextRequest) {
   if ("error" in jsonResult) return jsonResult.error;
   const parsed = parseBody(settingsSchema, jsonResult.data);
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const { aiProvider, aiEndpointUrl, aiModelName, aiApiKey, embeddingEndpointUrl, embeddingModelName, whisperEndpointUrl } = parsed.data;
+  const { aiProvider, aiEndpointUrl, aiModelName, aiApiKey, embeddingEndpointUrl, embeddingModelName, whisperEndpointUrl, therapyEnabled } = parsed.data;
 
   const now = new Date();
 
@@ -58,6 +59,7 @@ export async function PUT(request: NextRequest) {
       embeddingEndpointUrl: embeddingEndpointUrl || null,
       embeddingModelName: embeddingModelName || null,
       whisperEndpointUrl: whisperEndpointUrl || null,
+      therapyEnabled: therapyEnabled ?? existing.therapyEnabled,
       updatedAt: now,
     }).where(eq(userSettings.userId, session.user.id));
   } else {
@@ -71,6 +73,7 @@ export async function PUT(request: NextRequest) {
       embeddingEndpointUrl: embeddingEndpointUrl || null,
       embeddingModelName: embeddingModelName || null,
       whisperEndpointUrl: whisperEndpointUrl || null,
+      therapyEnabled: therapyEnabled || false,
       createdAt: now,
       updatedAt: now,
     });

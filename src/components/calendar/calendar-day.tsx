@@ -8,6 +8,8 @@ interface EntryInfo {
   title: string;
   wordCount: number;
   moodScore?: number | null;
+  hasTherapyNotes?: boolean;
+  isSessionDay?: boolean;
 }
 
 interface CalendarDayProps {
@@ -52,8 +54,20 @@ export function CalendarDay({ date, currentMonth, entry, onClick }: CalendarDayP
       {entry && (
         <div className="mt-0.5 flex-1 overflow-hidden">
           <p className="truncate text-xs font-medium hidden sm:block">{entry.title || "Untitled"}</p>
-          <p className="text-[10px] text-muted-foreground hidden sm:block">{entry.wordCount} words</p>
-          <span className="block sm:hidden h-1 w-1 rounded-full bg-primary mt-1" />
+          <div className="flex items-center gap-1">
+            <p className="text-[10px] text-muted-foreground hidden sm:block">{entry.wordCount} words</p>
+            {entry.hasTherapyNotes && (
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-500 hidden sm:block" title={entry.isSessionDay ? "Session day" : "Therapy notes"} />
+            )}
+            {entry.isSessionDay && (
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 hidden sm:block" title="Session day" />
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 sm:hidden mt-1">
+            <span className="h-1 w-1 rounded-full bg-primary" />
+            {entry.hasTherapyNotes && <span className="h-1 w-1 rounded-full bg-purple-500" />}
+            {entry.isSessionDay && <span className="h-1 w-1 rounded-full bg-blue-500" />}
+          </div>
         </div>
       )}
     </button>

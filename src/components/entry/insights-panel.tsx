@@ -9,6 +9,8 @@ import {
   Users,
   ListChecks,
   Tag,
+  Calendar,
+  MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +21,8 @@ interface Insight {
   actionItems: string[];
   keyPeople: string[];
   themes: string[];
+  events?: string[];
+  places?: string[];
 }
 
 interface InsightsPanelProps {
@@ -126,12 +130,50 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
             <Separator />
             <div>
               <p className="mb-1.5 text-xs font-medium flex items-center gap-1">
-                <Users className="h-3 w-3" /> People Mentioned
+                <Users className="h-3 w-3" /> People
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.keyPeople.map((person) => (
-                  <Badge key={person} variant="outline" className="text-xs">
+                  <Badge key={person} variant="outline" className="text-xs text-blue-600 border-blue-300 bg-blue-500/10">
                     {person}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Events */}
+        {insight.events && insight.events.length > 0 && (
+          <>
+            <Separator />
+            <div>
+              <p className="mb-1.5 text-xs font-medium flex items-center gap-1">
+                <Calendar className="h-3 w-3" /> Events
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {insight.events.map((event) => (
+                  <Badge key={event} variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-500/10">
+                    {event}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Places */}
+        {insight.places && insight.places.length > 0 && (
+          <>
+            <Separator />
+            <div>
+              <p className="mb-1.5 text-xs font-medium flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> Places
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {insight.places.map((place) => (
+                  <Badge key={place} variant="outline" className="text-xs text-green-600 border-green-300 bg-green-500/10">
+                    {place}
                   </Badge>
                 ))}
               </div>

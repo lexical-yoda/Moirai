@@ -6,8 +6,7 @@ import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
-
-const VOICE_DIR = path.join(process.env.DATABASE_PATH ? path.dirname(process.env.DATABASE_PATH) : "data", "voice");
+import { VOICE_DIR } from "@/lib/constants";
 
 function ensureVoiceDir() {
   if (!fs.existsSync(VOICE_DIR)) {
@@ -91,8 +90,14 @@ export async function POST(request: NextRequest) {
   const filePath = path.join(VOICE_DIR, filename);
 
   // Write file to disk
-  const buffer = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(filePath, buffer);
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(await file.arrayBuffer());
+    fs.writeFileSync(filePath, buffer);
+  } catch (err) {
+    console.error("[Voice] Failed to write file:", filePath, err);
+    return NextResponse.json({ error: "Failed to save recording to disk" }, { status: 500 });
+  }
 
   // Save to database
   await db.insert(voiceRecordings).values({

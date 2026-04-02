@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, sqlite } from "@/lib/db";
 import { entries, entryLinks } from "@/lib/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import { parseJsonBody } from "@/lib/api-utils";
@@ -28,21 +28,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   // Get the "other" entry for each link
   const linkedEntryIds = links.map((l) => l.sourceEntryId === id ? l.targetEntryId : l.sourceEntryId);
-  const linkedEntries = [];
+  if (linkedEntryIds.length === 0) return NextResponse.json([]);
 
-  for (const linkedId of linkedEntryIds) {
-    const e = await db.query.entries.findFirst({
-      where: and(eq(entries.id, linkedId), eq(entries.userId, session.user.id)),
-      columns: { id: true, date: true, title: true, wordCount: true },
-    });
-    if (e) {
-      const link = links.find((l) =>
-        (l.sourceEntryId === id && l.targetEntryId === linkedId) ||
-        (l.targetEntryId === id && l.sourceEntryId === linkedId)
-      );
-      linkedEntries.push({ ...e, linkId: link?.id });
-    }
-  }
+  const linkedEntriesData = await db.query.entries.findMany({
+    where: and(eq(entries.userId, session.user.id), inArray(entries.id, linkedEntryIds)),
+    columns: { id: true, date: true, title: true, wordCount: true },
+  });
+
+  const linkedEntries = linkedEntriesData.map((e) => {
+    const link = links.find((l) =>
+      (l.sourceEntryId === id && l.targetEntryId === e.id) ||
+      (l.targetEntryId === id && l.sourceEntryId === e.id)
+    );
+    return { ...e, linkId: link?.id };
+  });
 
   return NextResponse.json(linkedEntries);
 }
