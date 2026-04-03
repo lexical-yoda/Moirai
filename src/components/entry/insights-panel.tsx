@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -11,6 +13,7 @@ import {
   Tag,
   Calendar,
   MapPin,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +31,10 @@ interface Insight {
 interface InsightsPanelProps {
   insight: Insight | null;
   loading: boolean;
+  onPersonEdit?: (oldName: string, newName: string) => void;
+  onPersonRemove?: (name: string) => void;
+  onPlaceEdit?: (oldName: string, newName: string) => void;
+  onPlaceRemove?: (name: string) => void;
 }
 
 function moodEmoji(score: number): string {
@@ -46,7 +53,9 @@ function moodColor(score: number): string {
   return "text-red-600 bg-red-500/10";
 }
 
-export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
+export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, onPlaceEdit, onPlaceRemove }: InsightsPanelProps) {
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   if (loading) {
     return (
       <Card>
@@ -134,9 +143,40 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.keyPeople.map((person) => (
-                  <Badge key={person} variant="outline" className="text-xs text-blue-700 dark:text-blue-400 border-blue-400 dark:border-blue-600 bg-blue-500/10">
-                    {person}
-                  </Badge>
+                  editingItem === person ? (
+                    <form key={person} className="flex gap-1" onSubmit={(e) => {
+                      e.preventDefault();
+                      if (editValue.trim() && editValue.trim() !== person) {
+                        onPersonEdit?.(person, editValue.trim());
+                      }
+                      setEditingItem(null);
+                    }}>
+                      <Input
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="h-6 w-28 text-xs px-1.5"
+                        autoFocus
+                        onBlur={() => setEditingItem(null)}
+                        onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}
+                      />
+                    </form>
+                  ) : (
+                    <Badge
+                      key={person}
+                      variant="outline"
+                      className="text-xs text-blue-700 dark:text-blue-400 border-blue-400 dark:border-blue-600 bg-blue-500/10 gap-1 group cursor-pointer max-w-full"
+                      onClick={() => { setEditingItem(person); setEditValue(person); }}
+                    >
+                      <span className="truncate">{person}</span>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => { e.stopPropagation(); onPersonRemove?.(person); }}
+                        title="Remove"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </Badge>
+                  )
                 ))}
               </div>
             </div>
@@ -153,8 +193,8 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.events.map((event) => (
-                  <Badge key={event} variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-400 dark:border-amber-600 bg-amber-500/10">
-                    {event}
+                  <Badge key={event} variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-400 dark:border-amber-600 bg-amber-500/10 max-w-full">
+                    <span className="truncate">{event}</span>
                   </Badge>
                 ))}
               </div>
@@ -172,9 +212,40 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.places.map((place) => (
-                  <Badge key={place} variant="outline" className="text-xs text-green-700 dark:text-green-400 border-green-400 dark:border-green-600 bg-green-500/10">
-                    {place}
-                  </Badge>
+                  editingItem === `place:${place}` ? (
+                    <form key={place} className="flex gap-1" onSubmit={(e) => {
+                      e.preventDefault();
+                      if (editValue.trim() && editValue.trim() !== place) {
+                        onPlaceEdit?.(place, editValue.trim());
+                      }
+                      setEditingItem(null);
+                    }}>
+                      <Input
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="h-6 w-28 text-xs px-1.5"
+                        autoFocus
+                        onBlur={() => setEditingItem(null)}
+                        onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}
+                      />
+                    </form>
+                  ) : (
+                    <Badge
+                      key={place}
+                      variant="outline"
+                      className="text-xs text-green-700 dark:text-green-400 border-green-400 dark:border-green-600 bg-green-500/10 max-w-full gap-1 group cursor-pointer"
+                      onClick={() => { setEditingItem(`place:${place}`); setEditValue(place); }}
+                    >
+                      <span className="truncate">{place}</span>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => { e.stopPropagation(); onPlaceRemove?.(place); }}
+                        title="Remove"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </Badge>
+                  )
                 ))}
               </div>
             </div>

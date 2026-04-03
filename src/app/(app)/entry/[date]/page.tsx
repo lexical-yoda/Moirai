@@ -459,6 +459,79 @@ export default function EntryPage() {
     }
   }
 
+  async function handlePersonEdit(oldName: string, newName: string) {
+    if (!entry) return;
+    try {
+      const res = await fetch(`/api/entries/${entry.id}/insights`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "edit", oldName, newName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInsight((prev) => prev ? { ...prev, keyPeople: data.keyPeople } : prev);
+        // Reload entry content since the name was replaced in text
+        const entryRes = await fetch(`/api/entries?date=${date}`);
+        if (entryRes.ok) {
+          const fresh = await entryRes.json();
+          if (fresh?.content) {
+            setContent(fresh.content);
+            lastContentRef.current = fresh.content;
+            setEditorKey((k) => k + 1);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Entry] Person edit failed:", err);
+    }
+  }
+
+  async function handlePersonRemove(name: string) {
+    if (!entry) return;
+    try {
+      const res = await fetch(`/api/entries/${entry.id}/insights`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove", oldName: name }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInsight((prev) => prev ? { ...prev, keyPeople: data.keyPeople } : prev);
+      }
+    } catch (err) {
+      console.error("[Entry] Person remove failed:", err);
+    }
+  }
+
+  async function handlePlaceEdit(oldName: string, newName: string) {
+    if (!entry) return;
+    try {
+      await fetch(`/api/entries/${entry.id}/insights`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "edit-place", oldName, newName }),
+      });
+      // Reload insights to get updated places
+      loadSidebarData(entry.id);
+    } catch (err) {
+      console.error("[Entry] Place edit failed:", err);
+    }
+  }
+
+  async function handlePlaceRemove(name: string) {
+    if (!entry) return;
+    try {
+      await fetch(`/api/entries/${entry.id}/insights`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove-place", oldName: name }),
+      });
+      setInsight((prev) => prev ? { ...prev, places: prev.places?.filter((p) => p !== name) } : prev);
+    } catch (err) {
+      console.error("[Entry] Place remove failed:", err);
+    }
+  }
+
   function handleFormattedContentChange(newContent: string) {
     setFormattedContent(newContent);
     if (entry) {
@@ -663,7 +736,7 @@ export default function EntryPage() {
         {/* Mobile: show insights, links, similar entries inline (hidden on desktop where sidebar shows them) */}
         {entry && (
           <div className="space-y-4 lg:hidden">
-            <InsightsPanel insight={insight} loading={insightLoading} />
+            <InsightsPanel insight={insight} loading={insightLoading} onPersonEdit={handlePersonEdit} onPersonRemove={handlePersonRemove} onPlaceEdit={handlePlaceEdit} onPlaceRemove={handlePlaceRemove} />
             <EntryLinks
               entryId={entry.id}
               links={linkedEntries}
@@ -696,7 +769,7 @@ export default function EntryPage() {
       {/* Sidebar — insights, recordings, similar entries */}
       {entry && (
         <aside className="hidden w-72 shrink-0 space-y-4 lg:block">
-          <InsightsPanel insight={insight} loading={insightLoading} />
+          <InsightsPanel insight={insight} loading={insightLoading} onPersonEdit={handlePersonEdit} onPersonRemove={handlePersonRemove} onPlaceEdit={handlePlaceEdit} onPlaceRemove={handlePlaceRemove} />
           <EntryLinks
             entryId={entry.id}
             links={linkedEntries}
