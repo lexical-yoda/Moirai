@@ -81,14 +81,14 @@ export function ActivityGrid({ activities, logs, from, to }: ActivityGridProps) 
           <table className="w-full text-xs">
             <thead>
               <tr>
-                <th className="text-left py-1 pr-3 font-medium text-muted-foreground sticky left-0 bg-card min-w-28">Activity</th>
+                <th className="text-left py-1 pr-2 sm:pr-3 font-medium text-muted-foreground sticky left-0 bg-card min-w-20 sm:min-w-28 whitespace-nowrap">Activity</th>
                 {days.map((day) => (
                   <th key={format(day, "yyyy-MM-dd")} className="text-center font-normal text-muted-foreground px-0.5 min-w-5">
                     {getDate(day)}
                   </th>
                 ))}
-                <th className="text-center pl-2 font-medium text-muted-foreground min-w-12">Rate</th>
-                <th className="text-center pl-1 font-medium text-muted-foreground min-w-10">Streak</th>
+                <th className="text-center pl-2 font-medium text-muted-foreground min-w-10 sm:min-w-12 whitespace-nowrap">Rate</th>
+                <th className="text-center pl-1 font-medium text-muted-foreground min-w-8 sm:min-w-10 whitespace-nowrap">Streak</th>
               </tr>
             </thead>
             <tbody>
@@ -99,7 +99,7 @@ export function ActivityGrid({ activities, logs, from, to }: ActivityGridProps) 
 
                 return (
                   <tr key={activity.id}>
-                    <td className="py-1 pr-3 sticky left-0 bg-card">
+                    <td className="py-1 pr-2 sm:pr-3 sticky left-0 bg-card max-w-20 sm:max-w-28 truncate">
                       <span className="flex items-center gap-1">
                         <span>{activity.emoji || (activity.type === "good" ? "✅" : "❌")}</span>
                         <span className="truncate">{activity.name}</span>

@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { parseJsonBody } from "@/lib/api-utils";
 import { safeJsonParse } from "@/lib/json";
+import { personUpdateSchema, parseBody } from "@/lib/validation";
 
 // PUT /api/people/[id] — update a person
 export async function PUT(
@@ -23,12 +24,14 @@ export async function PUT(
 
   const jsonResult = await parseJsonBody(request);
   if ("error" in jsonResult) return jsonResult.error;
-  const data = jsonResult.data as { name?: string; aliases?: string[]; relationship?: string; notes?: string };
+  const parsed = parseBody(personUpdateSchema, jsonResult.data);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const data = parsed.data;
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
-  if (data.name && typeof data.name === "string") updates.name = data.name.trim();
-  if (Array.isArray(data.aliases)) {
-    updates.aliases = JSON.stringify(data.aliases.filter((a) => typeof a === "string" && a.trim()).map((a) => a.trim().toLowerCase()));
+  if (data.name) updates.name = data.name.trim();
+  if (data.aliases) {
+    updates.aliases = JSON.stringify(data.aliases.filter((a) => a.trim()).map((a) => a.trim().toLowerCase()));
   }
   if (data.relationship !== undefined) updates.relationship = data.relationship || null;
   if (data.notes !== undefined) updates.notes = data.notes || null;

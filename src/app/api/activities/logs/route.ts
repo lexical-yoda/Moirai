@@ -5,6 +5,7 @@ import { eq, and, gte, lte } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import { parseJsonBody } from "@/lib/api-utils";
+import { activityLogSchema, parseBody } from "@/lib/validation";
 
 // GET /api/activities/logs?date=YYYY-MM-DD or ?from=YYYY-MM-DD&to=YYYY-MM-DD
 export async function GET(request: NextRequest) {
@@ -47,24 +48,15 @@ export async function POST(request: NextRequest) {
 
   const jsonResult = await parseJsonBody(request);
   if ("error" in jsonResult) return jsonResult.error;
-  const { activityId, date, completed, source, entryId } = jsonResult.data as {
-    activityId?: string; date?: string; completed?: boolean; source?: string; entryId?: string;
-  };
-
-  if (!activityId || !date) {
-    return NextResponse.json({ error: "activityId and date required" }, { status: 400 });
-  }
+  const parsed = parseBody(activityLogSchema, jsonResult.data);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const { activityId, date, completed, source, entryId } = parsed.data;
 
   // Verify activity belongs to user
   const activity = await db.query.activities.findFirst({
     where: and(eq(activities.id, activityId), eq(activities.userId, session.user.id)),
   });
   if (!activity) return NextResponse.json({ error: "Activity not found" }, { status: 404 });
-
-  // Validate date format
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ error: "Invalid date format" }, { status: 400 });
-  }
 
   // Verify entry belongs to user if provided
   if (entryId) {

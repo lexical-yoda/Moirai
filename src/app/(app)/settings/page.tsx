@@ -491,16 +491,16 @@ function ActivitySettings() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Add new activity */}
-        <div className="flex gap-2 items-end">
-          <div className="w-16">
+        <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[4rem_1fr_6rem_auto] gap-2 items-end">
+          <div>
             <Label className="text-xs">Emoji</Label>
-            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="💪" className="text-center" maxLength={4} />
+            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="💪" className="text-center w-16" maxLength={4} />
           </div>
-          <div className="flex-1">
+          <div className="min-w-0">
             <Label className="text-xs">Activity</Label>
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Gym, Reading, Meditation" onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Gym, Reading" onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
           </div>
-          <div className="w-24">
+          <div>
             <Label className="text-xs">Type</Label>
             <div className="flex">
               <Button size="sm" variant={newType === "good" ? "default" : "outline"} className="rounded-r-none text-xs h-9 flex-1" onClick={() => setNewType("good")}>Good</Button>

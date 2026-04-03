@@ -13,11 +13,28 @@ let vecTableInitialized = false;
 let vecTableDimension = 0;
 
 function ensureVecTable(dimension: number) {
+  if (!Number.isInteger(dimension) || dimension < 1 || dimension > 65536) {
+    throw new Error(`Invalid embedding dimension: ${dimension}`);
+  }
+
   if (vecTableInitialized && vecTableDimension === dimension) return;
 
   try {
-    // Check if table exists with correct dimensions
+    // Check if table exists
     sqlite.prepare("SELECT count(*) FROM vec_entries LIMIT 0").get();
+
+    // Table exists — verify dimension matches by checking an existing row's embedding size
+    if (vecTableDimension > 0 && vecTableDimension !== dimension) {
+      console.warn(`[Embed] Embedding dimension changed from ${vecTableDimension} to ${dimension}. Recreating vec_entries table.`);
+      sqlite.exec("DROP TABLE IF EXISTS vec_entries");
+      sqlite.exec(`
+        CREATE VIRTUAL TABLE vec_entries USING vec0(
+          entry_id INTEGER PRIMARY KEY,
+          embedding float[${dimension}]
+        )
+      `);
+    }
+
     vecTableInitialized = true;
     vecTableDimension = dimension;
   } catch {
@@ -25,7 +42,7 @@ function ensureVecTable(dimension: number) {
     sqlite.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS vec_entries USING vec0(
         entry_id INTEGER PRIMARY KEY,
-        embedding float[${Number(dimension)}]
+        embedding float[${dimension}]
       )
     `);
     vecTableInitialized = true;

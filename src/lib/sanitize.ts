@@ -12,15 +12,15 @@ export function sanitizeHtml(dirty: string): string {
       "ul", "ol", "li", "blockquote", "pre", "code",
       "a", "mark", "hr", "span", "div",
       "table", "thead", "tbody", "tr", "th", "td",
-      "input",
     ],
     ALLOWED_ATTR: ["href", "class", "type", "checked", "disabled"],
     FORBID_ATTR: ["style", "onerror", "onload", "onclick"],
   });
 
-  // Add secure attributes to all anchor tags (rel and target not in ALLOWED_ATTR so DOMPurify strips user-provided ones)
+  // Add secure attributes to all anchor tags
+  // Handles both <a ...> (with attributes) and <a> (bare tag)
   return clean.replace(
-    /<a(\s)/g,
+    /<a(\s|>)/g,
     '<a rel="noopener noreferrer" target="_blank"$1'
   );
 }

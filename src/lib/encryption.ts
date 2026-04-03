@@ -26,17 +26,32 @@ export function verifyPassphrase(passphrase: string, stored: string): boolean {
   return crypto.timingSafeEqual(hash, expected);
 }
 
+const ENCRYPTION_VERSION = "v1";
+
 export function encrypt(plaintext: string, key: Buffer): string {
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  // Format: iv:tag:ciphertext (all hex)
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+  // Format: version:iv:tag:ciphertext (all hex)
+  return `${ENCRYPTION_VERSION}:${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
 }
 
 export function decrypt(ciphertext: string, key: Buffer): string {
-  const [ivHex, tagHex, encryptedHex] = ciphertext.split(":");
+  const parts = ciphertext.split(":");
+
+  let ivHex: string, tagHex: string, encryptedHex: string;
+
+  if (parts[0] === "v1" && parts.length === 4) {
+    // Versioned format: v1:iv:tag:ciphertext
+    [, ivHex, tagHex, encryptedHex] = parts;
+  } else if (parts.length === 3) {
+    // Legacy format: iv:tag:ciphertext
+    [ivHex, tagHex, encryptedHex] = parts;
+  } else {
+    throw new Error("Invalid encrypted data format");
+  }
+
   const iv = Buffer.from(ivHex, "hex");
   const tag = Buffer.from(tagHex, "hex");
   const encrypted = Buffer.from(encryptedHex, "hex");

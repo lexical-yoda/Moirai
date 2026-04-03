@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, count } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 
 async function requireAdmin(request: NextRequest) {
@@ -40,6 +40,15 @@ export async function DELETE(request: NextRequest) {
 
   if (userId === admin.id) {
     return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
+  }
+
+  // Prevent deleting the last admin — would cause permanent lockout
+  const targetUser = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (targetUser?.isAdmin) {
+    const adminCount = await db.select({ c: count() }).from(users).where(eq(users.isAdmin, true));
+    if (adminCount[0].c <= 1) {
+      return NextResponse.json({ error: "Cannot delete the last admin account" }, { status: 400 });
+    }
   }
 
   await db.delete(users).where(eq(users.id, userId));

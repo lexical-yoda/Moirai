@@ -1,8 +1,18 @@
 import { ChatMessage } from "./client";
 
+/** Escape a string for safe interpolation into LLM prompt templates. Strips XML-like tags to prevent delimiter injection. */
+function sanitizeForPrompt(value: string): string {
+  return value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Sanitize an array of strings for prompt interpolation. */
+function sanitizeArrayForPrompt(values: string[]): string[] {
+  return values.map(sanitizeForPrompt);
+}
+
 export function insightExtractionPrompt(entryContent: string, knownPeople?: string[]): ChatMessage[] {
   const peopleHint = knownPeople && knownPeople.length > 0
-    ? `\n\nKnown people for reference (ONLY include in keyPeople if they are actually mentioned or referenced in the entry — do NOT list people who are not mentioned): ${knownPeople.join(", ")}`
+    ? `\n\nKnown people for reference (ONLY include in keyPeople if they are actually mentioned or referenced in the entry — do NOT list people who are not mentioned): ${sanitizeArrayForPrompt(knownPeople).join(", ")}`
     : "";
 
   return [
@@ -52,7 +62,7 @@ Only return true if the entry clearly indicates the person did the activity. Do 
     },
     {
       role: "user",
-      content: `Activities to detect: ${JSON.stringify(activityNames)}
+      content: `Activities to detect: ${JSON.stringify(sanitizeArrayForPrompt(activityNames))}
 
 <entry>
 ${entryContent}
@@ -65,9 +75,9 @@ export function transcriptionCleanupPrompt(rawTranscription: string, knownContex
   let contextHint = "";
   if (knownContext) {
     const parts: string[] = [];
-    if (knownContext.people?.length) parts.push(`Known people: ${knownContext.people.join(", ")}`);
-    if (knownContext.activities?.length) parts.push(`Tracked activities: ${knownContext.activities.join(", ")}`);
-    if (knownContext.recentThemes?.length) parts.push(`Recent journal themes: ${knownContext.recentThemes.join(", ")}`);
+    if (knownContext.people?.length) parts.push(`Known people: ${sanitizeArrayForPrompt(knownContext.people).join(", ")}`);
+    if (knownContext.activities?.length) parts.push(`Tracked activities: ${sanitizeArrayForPrompt(knownContext.activities).join(", ")}`);
+    if (knownContext.recentThemes?.length) parts.push(`Recent journal themes: ${sanitizeArrayForPrompt(knownContext.recentThemes).join(", ")}`);
     if (parts.length) contextHint = `\n\nContext about this person's life:\n${parts.join("\n")}`;
   }
 
@@ -94,16 +104,16 @@ export function personRenamePrompt(entryContent: string, oldName: string, newNam
   return [
     {
       role: "system",
-      content: `You are a text editing assistant. In the journal entry below, the word/name "${oldName}" was incorrectly transcribed. It actually refers to a person named "${newName}".
+      content: `You are a text editing assistant. In the journal entry below, the word/name "${sanitizeForPrompt(oldName)}" was incorrectly transcribed. It actually refers to a person named "${sanitizeForPrompt(newName)}".
 
-Replace ONLY the references to this person with "${newName}". Do NOT replace the word "${oldName}" when it is used as a regular English word (not referring to a person).
+Replace ONLY the references to this person with "${sanitizeForPrompt(newName)}". Do NOT replace the word "${sanitizeForPrompt(oldName)}" when it is used as a regular English word (not referring to a person).
 
 Rules:
-- Only replace when "${oldName}" refers to the person
+- Only replace when "${sanitizeForPrompt(oldName)}" refers to the person
 - Keep the rest of the text exactly the same — no rephrasing, no restructuring
 - Preserve all HTML tags exactly as they are
 - Return the full text with replacements made
-- If "${oldName}" only appears as a regular word and never as a person reference, return the text unchanged`,
+- If "${sanitizeForPrompt(oldName)}" only appears as a regular word and never as a person reference, return the text unchanged`,
     },
     {
       role: "user",
@@ -236,7 +246,7 @@ export function therapySessionMatchingPrompt(
   sessionContent: string,
   pendingItems: Array<{ id: string; description: string }>
 ): ChatMessage[] {
-  const itemsList = pendingItems.map((i) => `- [${i.id}] ${i.description}`).join("\n");
+  const itemsList = pendingItems.map((i) => `- [${i.id}] ${sanitizeForPrompt(i.description)}`).join("\n");
   return [
     {
       role: "system",

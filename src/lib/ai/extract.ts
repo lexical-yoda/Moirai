@@ -90,23 +90,22 @@ export async function extractInsights(userId: string, entryId: string, content: 
       where: eq(people.userId, userId),
     });
 
-    // Build alias → canonical name lookup (all lowercase)
+    // Build alias → canonical display name lookup (lowercase keys, original-case values)
     const aliasMap = new Map<string, string>();
     for (const p of userPeople) {
-      const canonicalName = p.name.toLowerCase();
-      aliasMap.set(canonicalName, canonicalName);
+      aliasMap.set(p.name.toLowerCase(), p.name); // preserve original casing
       const aliases: string[] = safeJsonParse(p.aliases, []);
       for (const alias of aliases) {
-        aliasMap.set(alias.toLowerCase(), canonicalName);
+        aliasMap.set(alias.toLowerCase(), p.name); // resolve alias to display name
       }
     }
 
-    // Resolve keyPeople to canonical names, dedup
+    // Resolve keyPeople to canonical names (preserving DB casing), dedup
     const resolvedPeople = new Set<string>();
     for (const person of (parsed.keyPeople || [])) {
       const lower = person.toLowerCase().trim();
       if (!lower) continue;
-      const canonical = aliasMap.get(lower) || lower;
+      const canonical = aliasMap.get(lower) || person.trim();
       resolvedPeople.add(canonical);
     }
 
@@ -121,7 +120,7 @@ export async function extractInsights(userId: string, entryId: string, content: 
       tagEntries.push(theme.toLowerCase().trim());
     }
     for (const person of [...resolvedPeople].slice(0, 5)) {
-      tagEntries.push(`person:${person}`);
+      tagEntries.push(`person:${person.toLowerCase()}`);
     }
     for (const event of (parsed.events || []).slice(0, 5)) {
       tagEntries.push(`event:${event.toLowerCase().trim()}`);

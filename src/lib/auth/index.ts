@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { db } from "@/lib/db";
+import { db, sqlite } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { users, appSettings } from "@/lib/db/schema";
 import { count, eq } from "drizzle-orm";
@@ -61,15 +61,19 @@ export async function isRegistrationOpen(): Promise<boolean> {
 
 /**
  * Make the first registered user an admin and close registration.
+ * Uses a transaction to prevent race conditions with concurrent registrations.
  */
 export async function handlePostRegistration(userId: string) {
-  const userCount = await db.select({ c: count() }).from(users);
+  const promoteFirstUser = sqlite.transaction(() => {
+    const row = sqlite.prepare("SELECT COUNT(*) as c FROM users").get() as { c: number };
+    if (row.c === 1) {
+      // First user — make admin and close registration atomically
+      sqlite.prepare("UPDATE users SET is_admin = 1 WHERE id = ?").run(userId);
+      sqlite.prepare(
+        "INSERT INTO app_settings (key, value) VALUES ('registration_open', 'false') ON CONFLICT(key) DO UPDATE SET value = 'false'"
+      ).run();
+    }
+  });
 
-  if (userCount[0].c === 1) {
-    // First user — make admin
-    await db.update(users).set({ isAdmin: true }).where(eq(users.id, userId));
-    // Close registration
-    await db.insert(appSettings).values({ key: "registration_open", value: "false" })
-      .onConflictDoUpdate({ target: appSettings.key, set: { value: "false" } });
-  }
+  promoteFirstUser();
 }

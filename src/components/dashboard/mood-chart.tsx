@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from "recharts";
 import { format, parseISO } from "date-fns";
@@ -15,13 +16,13 @@ interface MoodChartProps {
 }
 
 export function MoodChart({ data }: MoodChartProps) {
-  const chartData = data
+  const chartData = useMemo(() => data
     .filter((d) => d.moodScore != null)
     .map((d) => ({
       date: d.date,
       label: format(parseISO(d.date), "MMM d"),
       mood: d.moodScore,
-    }));
+    })), [data]);
 
   return (
     <Card>

@@ -154,7 +154,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                       <Input
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="h-6 w-28 text-xs px-1.5"
+                        className="h-6 w-20 sm:w-28 text-xs px-1.5"
                         autoFocus
                         onBlur={() => setEditingItem(null)}
                         onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}
@@ -223,7 +223,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                       <Input
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="h-6 w-28 text-xs px-1.5"
+                        className="h-6 w-20 sm:w-28 text-xs px-1.5"
                         autoFocus
                         onBlur={() => setEditingItem(null)}
                         onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}

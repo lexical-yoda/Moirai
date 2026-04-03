@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
 
   const query = new URL(request.url).searchParams.get("q");
   if (!query) return NextResponse.json({ error: "Query required" }, { status: 400 });
+  if (query.length > 1000) {
+    return NextResponse.json({ error: "Query too long (max 1000 characters)" }, { status: 400 });
+  }
 
   try {
     const config = await getAIConfig(session.user.id);

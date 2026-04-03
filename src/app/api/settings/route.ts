@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
 import { settingsSchema, parseBody } from "@/lib/validation";
 import { parseJsonBody } from "@/lib/api-utils";
+import { encryptApiKey } from "@/lib/ai/config";
 
 // GET /api/settings — never return API key in plaintext
 export async function GET(request: NextRequest) {
@@ -48,7 +49,10 @@ export async function PUT(request: NextRequest) {
     where: eq(userSettings.userId, session.user.id),
   });
 
-  const resolvedApiKey = aiApiKey === "••••••••" ? existing?.aiApiKey || null : aiApiKey || null;
+  // Keep existing key if masked placeholder is sent; encrypt new keys
+  const resolvedApiKey = aiApiKey === "••••••••"
+    ? existing?.aiApiKey || null
+    : aiApiKey ? encryptApiKey(aiApiKey) : null;
 
   if (existing) {
     await db.update(userSettings).set({

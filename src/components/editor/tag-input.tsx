@@ -120,7 +120,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
           aria-activedescendant={activeIndex >= 0 ? `tag-suggestion-${activeIndex}` : undefined}
         />
         {showSuggestions && input && suggestions.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full rounded-md border bg-popover p-1 shadow-md" role="listbox">
+          <div className="absolute z-50 mt-1 w-full max-h-40 overflow-y-auto rounded-md border bg-popover p-1 shadow-md" role="listbox">
             {suggestions.map((tag, i) => (
               <button
                 key={tag.id}
@@ -128,7 +128,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
-                  "w-full rounded px-2 py-1 text-left text-sm hover:bg-accent",
+                  "w-full rounded px-2 py-1 text-left text-sm truncate hover:bg-accent",
                   i === activeIndex && "bg-accent"
                 )}
                 onClick={() => selectSuggestion(tag.name)}

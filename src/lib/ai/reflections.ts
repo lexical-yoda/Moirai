@@ -1,11 +1,15 @@
 import { db } from "@/lib/db";
 import { entries, insights, reflections } from "@/lib/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { safeJsonParse } from "@/lib/json";
 import { getAIConfig } from "./config";
 import { chatCompletion } from "./client";
 import { weeklyReflectionPrompt, monthlyReflectionPrompt } from "./prompts";
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
 
 interface ReflectionResult {
   title: string;
@@ -25,6 +29,19 @@ export async function generateReflection(
   periodEnd: string
 ) {
   try {
+    // Check for existing reflection covering the same period
+    const existing = await db.query.reflections.findFirst({
+      where: and(
+        eq(reflections.userId, userId),
+        eq(reflections.type, type),
+        eq(reflections.periodStart, periodStart),
+        eq(reflections.periodEnd, periodEnd),
+      ),
+    });
+    if (existing) {
+      throw new Error(`A ${type} reflection for this period already exists`);
+    }
+
     const config = await getAIConfig(userId);
 
     // Get entries in the date range
@@ -41,15 +58,13 @@ export async function generateReflection(
       throw new Error("No entries found in this period");
     }
 
-    // Get insights for these entries
+    // Get insights only for entries in this period (not all user insights)
     const entryIds = userEntries.map((e) => e.id);
     const entryInsights = await db.query.insights.findMany({
-      where: eq(insights.userId, userId),
+      where: and(eq(insights.userId, userId), inArray(insights.entryId, entryIds)),
     });
     const insightMap = new Map(
-      entryInsights
-        .filter((i) => entryIds.includes(i.entryId))
-        .map((i) => [i.entryId, i])
+      entryInsights.map((i) => [i.entryId, i])
     );
 
     // Build summaries for the prompt
@@ -108,8 +123,4 @@ export async function generateReflection(
     console.error("[Reflections] Generation failed:", err);
     throw err;
   }
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }

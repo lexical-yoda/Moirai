@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Calendar, PenLine, Search, Settings, Heart } from "lucide-react";
+import { LayoutDashboard, Calendar, PenLine, Search, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
 const baseNavItems = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/entry", label: "Write", icon: PenLine },
+  { href: "/calendar", label: "Calendar", icon: Calendar },
   { href: "/search", label: "Search", icon: Search },
 ];
 
@@ -24,7 +25,6 @@ export function BottomNav() {
   const navItems = [
     ...baseNavItems,
     ...(therapyEnabled ? [{ href: "/therapy", label: "Therapy", icon: Heart }] : []),
-    { href: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (
@@ -41,7 +41,7 @@ export function BottomNav() {
               key={item.href}
               href={href}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors",
+                "flex flex-col items-center gap-0.5 px-1.5 sm:px-3 py-1.5 rounded-lg transition-colors min-w-0",
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground"

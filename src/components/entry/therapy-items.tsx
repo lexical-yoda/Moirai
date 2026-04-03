@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,11 +36,15 @@ export function TherapyItemsInline({ entryId, isSessionDay, onSessionDayChange }
   const [newItem, setNewItem] = useState("");
   const [adding, setAdding] = useState(false);
 
-  async function loadTherapyItems() {
+  // Use ref to always access current isSessionDay inside polling callback
+  const isSessionDayRef = useRef(isSessionDay);
+  isSessionDayRef.current = isSessionDay;
+
+  const loadTherapyItems = useCallback(async () => {
     try {
       const [entryRes, pendingRes] = await Promise.all([
         fetch(`/api/therapy?entryId=${entryId}`),
-        isSessionDay ? fetch("/api/therapy?status=pending") : Promise.resolve(null),
+        isSessionDayRef.current ? fetch("/api/therapy?status=pending") : Promise.resolve(null),
       ]);
       if (entryRes.ok) setEntryItems(await entryRes.json());
       if (pendingRes?.ok) setPendingItems(await pendingRes.json());
@@ -49,14 +53,19 @@ export function TherapyItemsInline({ entryId, isSessionDay, onSessionDayChange }
     } finally {
       setLoading(false);
     }
-  }
+  }, [entryId]);
 
   // Load on mount + poll every 10s to catch background-generated items
   useEffect(() => {
     loadTherapyItems();
     const interval = setInterval(loadTherapyItems, 10_000);
     return () => clearInterval(interval);
-  }, [entryId, isSessionDay]);
+  }, [loadTherapyItems]);
+
+  // Re-fetch immediately when session day changes
+  useEffect(() => {
+    loadTherapyItems();
+  }, [isSessionDay, loadTherapyItems]);
 
   async function handleAdd() {
     if (!newItem.trim()) return;

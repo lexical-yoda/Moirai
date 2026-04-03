@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { entries, insights, entryTags, tags } from "@/lib/db/schema";
+import { entries, insights, entryTags, tags, therapyItems } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { safeJsonParse } from "@/lib/json";
@@ -115,9 +115,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Could not find references to rename — try editing the entry directly" }, { status: 400 });
     }
 
-    // Clear old insights + tags — pipeline will regenerate them from corrected content
+    // Clear old insights, tags, and therapy items — pipeline will regenerate them from corrected content
     await db.delete(insights).where(eq(insights.entryId, id));
     await db.delete(entryTags).where(eq(entryTags.entryId, id));
+    await db.delete(therapyItems).where(and(eq(therapyItems.entryId, id), eq(therapyItems.userId, session.user.id)));
 
     // Queue full AI pipeline to regenerate everything from corrected content
     const { queueEntryTasks, cancelPendingTasks, processQueue } = await import("@/lib/processing/runner");

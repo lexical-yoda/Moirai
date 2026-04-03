@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
   if (!query || query.trim().length === 0) {
     return NextResponse.json([]);
   }
+  if (query.length > 1000) {
+    return NextResponse.json({ error: "Query too long (max 1000 characters)" }, { status: 400 });
+  }
 
   try {
     // FTS5 search with snippet highlighting, joined with entries for user filtering

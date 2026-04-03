@@ -4,6 +4,7 @@ import { therapyItems } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { parseJsonBody } from "@/lib/api-utils";
+import { therapyItemUpdateSchema, parseBody } from "@/lib/validation";
 
 // PUT /api/therapy/[id] — update a therapy item
 export async function PUT(
@@ -22,12 +23,14 @@ export async function PUT(
 
   const jsonResult = await parseJsonBody(request);
   if ("error" in jsonResult) return jsonResult.error;
-  const data = jsonResult.data as { description?: string; priority?: string; status?: string };
+  const parsed = parseBody(therapyItemUpdateSchema, jsonResult.data);
+  if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const data = parsed.data;
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (data.description) updates.description = data.description;
-  if (data.priority && ["high", "medium", "low"].includes(data.priority)) updates.priority = data.priority;
-  if (data.status && ["pending", "discussed", "resolved"].includes(data.status)) updates.status = data.status;
+  if (data.priority) updates.priority = data.priority;
+  if (data.status) updates.status = data.status;
 
   await db.update(therapyItems).set(updates).where(eq(therapyItems.id, id));
 

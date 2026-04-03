@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     // Queue background processing tasks (skipped during autosave)
     if (content && !skipProcessing) {
-      cancelPendingTasks(user.id, current.id).catch((err) => console.error("[Processing] Failed to cancel pending tasks:", err));
+      await cancelPendingTasks(user.id, current.id).catch((err) => console.error("[Processing] Failed to cancel pending tasks:", err));
       queueEntryTasks(user.id, current.id, content)
         .then(() => processQueue(user.id))
         .catch((err) => console.error("[Processing]", err));
