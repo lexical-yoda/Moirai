@@ -250,18 +250,31 @@ async function handleTranscription(task: TaskRecord) {
         .set({ content: newContent, updatedAt: new Date() })
         .where(eq(entries.id, task.entryId));
 
-      // Queue follow-up AI tasks (formatting, insights, embedding, therapy)
-      await queueTask(task.userId, task.entryId, "formatting");
-      await queueTask(task.userId, task.entryId, "insights");
-      await queueTask(task.userId, task.entryId, "embedding");
-
-      // Queue therapy if enabled for user
-      const userSettingsRow = await db.query.userSettings.findFirst({
-        where: eq(userSettings.userId, task.userId),
-        columns: { therapyEnabled: true },
+      // Only queue follow-up AI tasks if no more pending transcriptions for this entry
+      const pendingTranscriptions = await db.query.processingTasks.findFirst({
+        where: and(
+          eq(processingTasks.userId, task.userId),
+          eq(processingTasks.entryId, task.entryId!),
+          eq(processingTasks.type, "transcription"),
+          eq(processingTasks.status, "pending")
+        ),
       });
-      if (userSettingsRow?.therapyEnabled) {
-        await queueTask(task.userId, task.entryId, "therapy");
+
+      if (!pendingTranscriptions) {
+        // All transcriptions done — queue AI pipeline once
+        await queueTask(task.userId, task.entryId, "formatting");
+        await queueTask(task.userId, task.entryId, "insights");
+        await queueTask(task.userId, task.entryId, "embedding");
+
+        const userSettingsRow = await db.query.userSettings.findFirst({
+          where: eq(userSettings.userId, task.userId),
+          columns: { therapyEnabled: true },
+        });
+        if (userSettingsRow?.therapyEnabled) {
+          await queueTask(task.userId, task.entryId, "therapy");
+        }
+      } else {
+        console.log("[Processing] More transcriptions pending for entry — deferring AI pipeline");
       }
     }
   }

@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { date, title, content, templateUsed, isSessionDay } = parsed.data;
+  const { date, title, content, templateUsed, isSessionDay, skipProcessing } = parsed.data;
 
   const now = new Date();
   const wc = wordCount(content || "");
@@ -126,8 +126,8 @@ export async function POST(request: NextRequest) {
       where: eq(entries.id, current.id),
     });
 
-    // Queue background processing tasks
-    if (content) {
+    // Queue background processing tasks (skipped during autosave)
+    if (content && !skipProcessing) {
       cancelPendingTasks(user.id, current.id).catch((err) => console.error("[Processing] Failed to cancel pending tasks:", err));
       queueEntryTasks(user.id, current.id, content)
         .then(() => processQueue(user.id))
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
         .where(eq(entries.id, existing.id));
 
       // Queue processing tasks for the concurrent-update path too
-      if (content) {
+      if (content && !skipProcessing) {
         queueEntryTasks(user.id, existing.id, content)
           .then(() => processQueue(user.id))
           .catch((err) => console.error("[Processing]", err));
@@ -182,8 +182,8 @@ export async function POST(request: NextRequest) {
     where: eq(entries.id, id),
   });
 
-  // Queue background processing tasks
-  if (content) {
+  // Queue background processing tasks (skipped during autosave)
+  if (content && !skipProcessing) {
     queueEntryTasks(user.id, id, content)
       .then(() => processQueue(user.id))
       .catch((err) => console.error("[Processing]", err));

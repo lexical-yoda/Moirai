@@ -2,7 +2,7 @@ import { ChatMessage } from "./client";
 
 export function insightExtractionPrompt(entryContent: string, knownPeople?: string[]): ChatMessage[] {
   const peopleHint = knownPeople && knownPeople.length > 0
-    ? `\n\nKnown people (use these names when you recognize references to them): ${knownPeople.join(", ")}`
+    ? `\n\nKnown people for reference (ONLY include in keyPeople if they are actually mentioned or referenced in the entry — do NOT list people who are not mentioned): ${knownPeople.join(", ")}`
     : "";
 
   return [

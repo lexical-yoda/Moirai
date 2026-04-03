@@ -10,6 +10,7 @@ export const entrySchema = z.object({
   content: z.string().max(500_000).optional().default(""),
   templateUsed: z.string().max(50).optional().nullable(),
   isSessionDay: z.boolean().optional(),
+  skipProcessing: z.boolean().optional(),
 });
 
 export const entryUpdateSchema = z.object({

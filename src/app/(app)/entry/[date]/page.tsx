@@ -26,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, Trash2, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Loader2, Trash2, RefreshCw, Sparkles, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useTherapyEnabled } from "@/hooks/use-therapy-enabled";
 
@@ -104,6 +104,7 @@ export default function EntryPage() {
   const therapyEnabled = useTherapyEnabled();
   const [isSessionDay, setIsSessionDay] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastContentRef = useRef<string>("");
@@ -113,12 +114,24 @@ export default function EntryPage() {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (processTimerRef.current) clearTimeout(processTimerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
-  // Poll for background processing changes every 5 seconds
-  // Continuously checks for content/recording/insight changes — lightweight (one fetch)
+  // Ctrl+S shortcut for manual save
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        handleManualSave();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [title, content]);
+
+  // Poll for background processing changes — only fetches when tasks are active
   useEffect(() => {
     if (!entry?.id) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -126,46 +139,53 @@ export default function EntryPage() {
     }
 
     const entryId = entry.id;
+    let hadActiveTasks = false;
 
     async function pollForChanges() {
       try {
-        // Fetch fresh entry data
-        const entryRes = await fetch(`/api/entries?date=${date}`);
-        if (!entryRes.ok) return;
-        const fresh = await entryRes.json();
-        if (!fresh) return;
+        // First check if there are any active processing tasks
+        const procRes = await fetch("/api/processing");
+        if (!procRes.ok) return;
+        const procData = await procRes.json();
+        const activeTasks = procData.tasks?.filter(
+          (t: { entryId: string; status: string }) =>
+            t.entryId === entryId && (t.status === "pending" || t.status === "running")
+        ) || [];
 
-        // Update content if changed on server (transcription appended, etc.)
-        if (fresh.content && fresh.content !== lastContentRef.current) {
-          setContent(fresh.content);
-          setEditorKey((k) => k + 1);
-          lastContentRef.current = fresh.content;
-        }
+        const hasActive = activeTasks.length > 0;
 
-        // Update formatted content
-        if (fresh.formattedContent && fresh.formattedContent !== lastFormattedRef.current) {
-          setFormattedContent(fresh.formattedContent);
-          setFormattedEditorKey((k) => k + 1);
-          lastFormattedRef.current = fresh.formattedContent;
-        }
-
-        // Update generated title
-        if (fresh.generatedTitle && !title) {
-          setTitle(fresh.generatedTitle);
-          setEntry((prev) => prev ? { ...prev, generatedTitle: fresh.generatedTitle } : prev);
-        }
-
-        // Reload recordings
-        const recRes = await fetch(`/api/voice/recordings?entryId=${entryId}`);
-        if (recRes.ok) {
-          const recs = await recRes.json();
-          if (JSON.stringify(recs) !== JSON.stringify(recordings)) {
-            setRecordings(recs);
+        // Only refresh data when tasks just completed (had active → no active)
+        if (hadActiveTasks && !hasActive) {
+          // Tasks finished — refresh everything once
+          const entryRes = await fetch(`/api/entries?date=${date}`);
+          if (entryRes.ok) {
+            const fresh = await entryRes.json();
+            if (fresh) {
+              if (fresh.content && fresh.content !== lastContentRef.current) {
+                setContent(fresh.content);
+                setEditorKey((k) => k + 1);
+                lastContentRef.current = fresh.content;
+              }
+              if (fresh.formattedContent && fresh.formattedContent !== lastFormattedRef.current) {
+                setFormattedContent(fresh.formattedContent);
+                setFormattedEditorKey((k) => k + 1);
+                lastFormattedRef.current = fresh.formattedContent;
+              }
+              if (fresh.generatedTitle && !title) {
+                setTitle(fresh.generatedTitle);
+                setEntry((prev) => prev ? { ...prev, generatedTitle: fresh.generatedTitle } : prev);
+              }
+            }
           }
+
+          // Reload recordings
+          loadRecordings(entryId);
+
+          // Reload insights
+          loadSidebarData(entryId);
         }
 
-        // Reload insights
-        loadSidebarData(entryId);
+        hadActiveTasks = hasActive;
       } catch (err) {
         console.error("[Entry] Poll error:", err);
       }
@@ -303,8 +323,22 @@ export default function EntryPage() {
 
   function handleChange(newTitle: string, newContent: string) {
     if (initialLoadRef.current) return;
+
+    // Autosave in 2s (content only, no AI pipeline)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => save(newTitle, newContent), 2000);
+    saveTimerRef.current = setTimeout(() => save(newTitle, newContent, { skipProcessing: true }), 2000);
+
+    // Queue AI pipeline after 5 minutes of inactivity
+    if (processTimerRef.current) clearTimeout(processTimerRef.current);
+    processTimerRef.current = setTimeout(() => save(newTitle, newContent), 5 * 60 * 1000);
+  }
+
+  // Manual save + process button
+  async function handleManualSave() {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (processTimerRef.current) clearTimeout(processTimerRef.current);
+    await save(title, content);
+    toast.success("Saved & processing queued");
   }
 
   function handleTitleChange(newTitle: string) {
@@ -478,6 +512,10 @@ export default function EntryPage() {
               {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
               {saved && <Check className="h-3 w-3 text-green-600" />}
               <Badge variant="outline" className="text-xs">{wordCount}w</Badge>
+              <Button variant="ghost" size="sm" className="gap-1 text-xs h-7" onClick={handleManualSave} disabled={saving} title="Save & process with AI (Ctrl+S)">
+                <Save className="h-3 w-3" />
+                <span className="hidden sm:inline">Save</span>
+              </Button>
             </div>
           </div>
           <div className="flex items-center gap-1 overflow-x-auto">
