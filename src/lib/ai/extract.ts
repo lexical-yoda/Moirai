@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
-import { insights, tags, entryTags, activities, activityLogs, entries } from "@/lib/db/schema";
+import { insights, tags, entryTags, activities, activityLogs, entries, people } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getAIConfig } from "./config";
 import { chatCompletion } from "./client";
 import { insightExtractionPrompt, activityDetectionPrompt } from "./prompts";
+import { safeJsonParse } from "@/lib/json";
 
 interface ExtractedInsight {
   mood: string;
@@ -30,7 +31,18 @@ export async function extractInsights(userId: string, entryId: string, content: 
     if (plaintext.length < 20) return;
 
     const config = await getAIConfig(userId);
-    const messages = insightExtractionPrompt(plaintext);
+
+    // Load known people names + aliases for better extraction
+    const userPeopleForPrompt = await db.query.people.findMany({
+      where: eq(people.userId, userId),
+      columns: { name: true, aliases: true },
+    });
+    const knownNames = userPeopleForPrompt.flatMap((p) => {
+      const aliases: string[] = safeJsonParse(p.aliases, []);
+      return [p.name, ...aliases];
+    });
+
+    const messages = insightExtractionPrompt(plaintext, knownNames.length > 0 ? knownNames : undefined);
 
     const response = await chatCompletion(config, messages, {
       temperature: 0.3,
@@ -72,13 +84,43 @@ export async function extractInsights(userId: string, entryId: string, content: 
       extractedAt: now,
     });
 
-    // Auto-create tags from themes, people, events, places
+    // Resolve people aliases — map extracted names to canonical identities
+    const userPeople = await db.query.people.findMany({
+      where: eq(people.userId, userId),
+    });
+
+    // Build alias → canonical name lookup (all lowercase)
+    const aliasMap = new Map<string, string>();
+    for (const p of userPeople) {
+      const canonicalName = p.name.toLowerCase();
+      aliasMap.set(canonicalName, canonicalName);
+      const aliases: string[] = safeJsonParse(p.aliases, []);
+      for (const alias of aliases) {
+        aliasMap.set(alias.toLowerCase(), canonicalName);
+      }
+    }
+
+    // Resolve keyPeople to canonical names, dedup
+    const resolvedPeople = new Set<string>();
+    for (const person of (parsed.keyPeople || [])) {
+      const lower = person.toLowerCase().trim();
+      if (!lower) continue;
+      const canonical = aliasMap.get(lower) || lower;
+      resolvedPeople.add(canonical);
+    }
+
+    // Update keyPeople in the insight with resolved names
+    await db.update(insights)
+      .set({ keyPeople: JSON.stringify([...resolvedPeople]) })
+      .where(eq(insights.entryId, entryId));
+
+    // Auto-create tags from themes, resolved people, events, places
     const tagEntries: string[] = [];
     for (const theme of (parsed.themes || []).slice(0, 5)) {
       tagEntries.push(theme.toLowerCase().trim());
     }
-    for (const person of (parsed.keyPeople || []).slice(0, 5)) {
-      tagEntries.push(`person:${person.toLowerCase().trim()}`);
+    for (const person of [...resolvedPeople].slice(0, 5)) {
+      tagEntries.push(`person:${person}`);
     }
     for (const event of (parsed.events || []).slice(0, 5)) {
       tagEntries.push(`event:${event.toLowerCase().trim()}`);

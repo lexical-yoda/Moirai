@@ -84,9 +84,6 @@ export const entries = sqliteTable("entries", {
   formattedContent: text("formatted_content"), // LLM-formatted version
   wordCount: integer("word_count").default(0),
   templateUsed: text("template_used"),
-  hasTherapyNotes: integer("has_therapy_notes", { mode: "boolean" }).default(false),
-  therapyContent: text("therapy_content"), // raw therapy notes
-  therapyFormattedContent: text("therapy_formatted_content"), // LLM-formatted therapy
   isSessionDay: integer("is_session_day", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
@@ -215,12 +212,28 @@ export const therapyItems = sqliteTable("therapy_items", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   entryId: text("entry_id").notNull().references(() => entries.id, { onDelete: "cascade" }),
   description: text("description").notNull(),
+  type: text("type").notNull().default("topic"), // "topic" | "takeaway"
   priority: text("priority").notNull().default("medium"), // "high" | "medium" | "low"
   status: text("status").notNull().default("pending"), // "pending" | "discussed" | "resolved"
   sessionEntryId: text("session_entry_id").references(() => entries.id, { onDelete: "set null" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
+
+// ── People identity mapping ──────────────────────────────────────────────────
+
+export const people = sqliteTable("people", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // Display name (e.g., "Sarah")
+  aliases: text("aliases").notNull().default("[]"), // JSON array of alternate names (e.g., ["Mom", "Amma", "S"])
+  relationship: text("relationship"), // Optional: "partner", "friend", "family", "colleague", etc.
+  notes: text("notes"), // Optional notes about this person
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  uniqueIndex("people_user_name_idx").on(table.userId, table.name),
+]);
 
 // ── Background processing ──────────────────────────────────────────────────
 

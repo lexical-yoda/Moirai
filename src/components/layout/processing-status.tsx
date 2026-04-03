@@ -66,6 +66,15 @@ export function ProcessingStatus() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  async function handleClear() {
+    try {
+      await fetch("/api/processing", { method: "DELETE" });
+      await fetchStatus();
+    } catch (err) {
+      console.error("[ProcessingStatus] Clear failed:", err);
+    }
+  }
+
   async function handleRetry(taskId: string) {
     setRetrying(taskId);
     try {
@@ -99,8 +108,16 @@ export function ProcessingStatus() {
 
       {open && (
         <div className="absolute right-0 top-10 z-50 w-80 rounded-lg border bg-popover shadow-lg">
-          <div className="border-b px-3 py-2">
+          <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-sm font-medium">Processing</span>
+            {data?.tasks && data.tasks.length > 0 && (
+              <button
+                onClick={handleClear}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           <div className="max-h-72 overflow-y-auto">

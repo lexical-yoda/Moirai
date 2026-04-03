@@ -29,6 +29,23 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
 
   const busy = saving || transcribing;
 
+  // Get duration from an audio blob
+  function getAudioDuration(blob: Blob): Promise<number> {
+    return new Promise((resolve) => {
+      const audio = new Audio();
+      audio.addEventListener("loadedmetadata", () => {
+        const dur = isFinite(audio.duration) ? Math.round(audio.duration) : 0;
+        URL.revokeObjectURL(audio.src);
+        resolve(dur);
+      });
+      audio.addEventListener("error", () => {
+        URL.revokeObjectURL(audio.src);
+        resolve(0);
+      });
+      audio.src = URL.createObjectURL(blob);
+    });
+  }
+
   // Ensure entry exists, return entryId
   async function ensureEntry(): Promise<string | null> {
     if (entryId) return entryId;
@@ -43,7 +60,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
   }
 
   // Save recording to server (without transcription)
-  async function saveRecording(blob: Blob, opts?: { transcription?: string; skipAutoTranscribe?: boolean }) {
+  async function saveRecording(blob: Blob, opts?: { transcription?: string; skipAutoTranscribe?: boolean; durationOverride?: number }) {
     setSaving(true);
     setError(null);
     try {
@@ -53,7 +70,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       const form = new FormData();
       form.append("file", blob, "recording.webm");
       form.append("entryId", resolvedId);
-      form.append("duration", String(duration));
+      form.append("duration", String(opts?.durationOverride ?? duration));
       if (opts?.transcription) form.append("transcription", opts.transcription);
       if (opts?.skipAutoTranscribe) form.append("skipAutoTranscribe", "true");
 
@@ -73,43 +90,23 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
   }
 
 
-  // Save first, then transcribe
+  // Save and queue background transcription (with LLM cleanup + recording markers)
   async function handleSaveAndTranscribe() {
     if (!audioBlob) return;
-
     setTranscribing(true);
     setError(null);
-
     try {
-      // Save recording first so it's never lost (skip auto-transcribe since we'll do it live)
-      const saveResult = await saveRecording(audioBlob, { skipAutoTranscribe: true });
+      // Save recording — server auto-queues transcription with LLM cleanup
+      const saveResult = await saveRecording(audioBlob);
       if (!saveResult) {
         setTranscribing(false);
         return;
       }
-
-      // Now transcribe live
-      const transcribeForm = new FormData();
-      transcribeForm.append("file", audioBlob, "recording.webm");
-
-      const res = await fetch("/api/voice/transcribe", {
-        method: "POST",
-        body: transcribeForm,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Transcription failed — recording was saved");
-        clearRecording();
-        setTranscribing(false);
-        return;
-      }
-
-      const data = await res.json();
-      onTranscription(data.text, saveResult.entryId);
+      toast.success("Recording saved — transcription queued");
       clearRecording();
     } catch (err) {
-      toast.error("Transcription failed — recording was saved");
+      toast.error("Failed to save recording");
+      console.error("[Voice] Save and transcribe error:", err);
     }
     setTranscribing(false);
   }
@@ -138,7 +135,8 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       return;
     }
 
-    await saveRecording(file); // Server auto-queues transcription
+    const fileDuration = await getAudioDuration(file);
+    await saveRecording(file, { durationOverride: fileDuration }); // Server auto-queues transcription
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -186,13 +184,9 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
       {audioBlob && !isRecording && (
         <>
           {audioUrl && <audio src={audioUrl} controls className="h-8 w-32 sm:w-40" />}
-          <Button variant="default" size="sm" className="gap-1.5" onClick={handleSaveAndTranscribe} disabled={busy} title="Save recording and transcribe">
-            {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            <span className="hidden sm:inline">{transcribing ? "Transcribing..." : "Transcribe"}</span>
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleSaveOnly} disabled={busy} title="Save recording without transcribing">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            <span className="hidden sm:inline">Save</span>
+          <Button variant="default" size="sm" className="gap-1.5" onClick={handleSaveAndTranscribe} disabled={busy} title="Save and transcribe in background">
+            {(saving || transcribing) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <span className="hidden sm:inline">{(saving || transcribing) ? "Saving..." : "Save & Transcribe"}</span>
           </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={clearRecording} disabled={busy} title="Discard recording">
             <Trash2 className="h-4 w-4" />

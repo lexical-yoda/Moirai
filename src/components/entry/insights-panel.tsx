@@ -134,7 +134,7 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.keyPeople.map((person) => (
-                  <Badge key={person} variant="outline" className="text-xs text-blue-600 border-blue-300 bg-blue-500/10">
+                  <Badge key={person} variant="outline" className="text-xs text-blue-700 dark:text-blue-400 border-blue-400 dark:border-blue-600 bg-blue-500/10">
                     {person}
                   </Badge>
                 ))}
@@ -153,7 +153,7 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.events.map((event) => (
-                  <Badge key={event} variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-500/10">
+                  <Badge key={event} variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-400 dark:border-amber-600 bg-amber-500/10">
                     {event}
                   </Badge>
                 ))}
@@ -172,7 +172,7 @@ export function InsightsPanel({ insight, loading }: InsightsPanelProps) {
               </p>
               <div className="flex flex-wrap gap-1">
                 {insight.places.map((place) => (
-                  <Badge key={place} variant="outline" className="text-xs text-green-600 border-green-300 bg-green-500/10">
+                  <Badge key={place} variant="outline" className="text-xs text-green-700 dark:text-green-400 border-green-400 dark:border-green-600 bg-green-500/10">
                     {place}
                   </Badge>
                 ))}

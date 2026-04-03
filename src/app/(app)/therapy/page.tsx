@@ -13,6 +13,7 @@ interface TherapyItem {
   id: string;
   entryId: string;
   description: string;
+  type: string;
   priority: string;
   status: string;
   sessionEntryId: string | null;
@@ -28,7 +29,7 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "text-muted-foreground border-border bg-muted",
 };
 
-const STATUS_TABS = ["pending", "discussed", "resolved"] as const;
+const STATUS_TABS = ["pending", "discussed", "resolved", "takeaways"] as const;
 
 export default function TherapyPage() {
   const [items, setItems] = useState<TherapyItem[]>([]);
@@ -84,11 +85,16 @@ export default function TherapyPage() {
     }
   }
 
-  const filtered = items.filter((i) => i.status === activeTab);
+  const topics = items.filter((i) => i.type === "topic");
+  const takeaways = items.filter((i) => i.type === "takeaway");
+  const filtered = activeTab === "takeaways"
+    ? takeaways
+    : topics.filter((i) => i.status === activeTab);
   const counts = {
-    pending: items.filter((i) => i.status === "pending").length,
-    discussed: items.filter((i) => i.status === "discussed").length,
-    resolved: items.filter((i) => i.status === "resolved").length,
+    pending: topics.filter((i) => i.status === "pending").length,
+    discussed: topics.filter((i) => i.status === "discussed").length,
+    resolved: topics.filter((i) => i.status === "resolved").length,
+    takeaways: takeaways.length,
   };
 
   if (loading) {

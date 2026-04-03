@@ -19,14 +19,16 @@ import {
   Undo,
   Redo,
   Highlighter,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ToolbarProps {
   editor: Editor | null;
+  onSearchToggle?: () => void;
 }
 
-export function Toolbar({ editor }: ToolbarProps) {
+export function Toolbar({ editor, onSearchToggle }: ToolbarProps) {
   if (!editor) return null;
 
   const items = [
@@ -125,6 +127,13 @@ export function Toolbar({ editor }: ToolbarProps) {
       isActive: false,
       disabled: !editor.can().redo(),
       title: "Redo",
+    },
+    { type: "separator" as const },
+    {
+      icon: Search,
+      action: () => onSearchToggle?.(),
+      isActive: false,
+      title: "Search & Replace (Ctrl+H)",
     },
   ];
 

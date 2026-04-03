@@ -4,7 +4,7 @@ This document is for AI agents and developers working on the Moirai codebase. It
 
 ## What This Is
 
-A local-first journal app with admin controls. Users write daily entries. Optionally, AI extracts insights (mood, themes, people, action items) and generates weekly/monthly reflections. Voice transcription via Whisper is also optional — recordings are saved and replayable. Everything runs locally — no cloud APIs unless the user explicitly configures one. First user becomes admin; registration auto-closes.
+A local-first journal app with admin controls. Users write daily entries. AI features are optional: insight extraction (mood, themes, people, events, places), auto-formatting with title generation, activity detection, therapy topic extraction, and weekly/monthly reflections. Voice transcription via Whisper includes LLM-powered cleanup for error correction. People identity mapping resolves aliases across entries. Background processing pipeline handles all AI tasks sequentially with retry logic. Everything runs locally — no cloud APIs unless the user explicitly configures one. First user becomes admin; registration auto-closes.
 
 ## Core Architecture
 
@@ -23,7 +23,7 @@ A local-first journal app with admin controls. Users write daily entries. Option
 
 1. **One entry per day** — enforced by unique constraint on `(user_id, date)`. The POST /api/entries endpoint upserts by date with race condition handling.
 
-2. **AI is optional and fire-and-forget** — entries save immediately, AI extraction runs async in the background. If AI is offline or unconfigured, the app works perfectly for core journaling.
+2. **AI runs via background processing pipeline** — entries save immediately, then tasks (formatting, insights, embedding, therapy) are queued and processed sequentially per-user with retry logic. Notification bell shows progress. If AI is offline, the app works perfectly for core journaling.
 
 3. **All external services are user-configured** — AI endpoint, embedding endpoint, and Whisper endpoint are set per-user in the Settings page. There are no hardcoded service URLs. Environment variables serve as initial defaults only.
 
@@ -53,38 +53,44 @@ src/
 │   │   ├── register/page.tsx
 │   │   └── layout.tsx         # Adds ThemePicker to auth pages
 │   ├── (app)/                 # Authenticated pages — sidebar (desktop) + bottom nav (mobile)
-│   │   ├── page.tsx           # Dashboard (stats, mood chart, heatmap, topics, recent)
+│   │   ├── page.tsx           # Dashboard (stats, mood chart, heatmap, topics, activities, therapy)
 │   │   ├── entry/[date]/      # Journal editor with sidebar (insights, links, recordings, similar)
-│   │   ├── calendar/          # Monthly calendar with mood colors
+│   │   ├── calendar/          # Monthly calendar with mood colors + session day indicators
+│   │   ├── therapy/           # Therapy items management (pending/discussed/resolved/takeaways)
 │   │   ├── search/            # FTS5 keyword + semantic search + export
 │   │   ├── reflections/       # AI reflections list + detail
-│   │   ├── settings/          # Integrations (AI, embeddings, whisper) + admin panel
+│   │   ├── settings/          # Integrations (AI, embeddings, whisper), people, activities, therapy, admin
 │   │   └── layout.tsx         # Sidebar + Header + BottomNav wrapper
 │   └── api/
 │       ├── admin/             # Registration toggle, user management (admin-only)
 │       ├── auth/[...all]/     # better-auth catch-all (rate-limited, registration blocking)
-│       ├── entries/           # CRUD + versions + insights + links + similar
-│       ├── tags/              # Tag CRUD with entry linking
+│       ├── entries/           # CRUD + versions + insights + links + similar + reformat
+│       ├── tags/              # Tag CRUD with entry linking (supports ?entryId filter)
 │       ├── insights/          # Dashboard aggregation + heatmap data
 │       ├── reflections/       # Generate, list, detail, delete
 │       ├── search/            # FTS5 keyword search
 │       ├── search/semantic/   # Vector similarity search
 │       ├── settings/          # User settings + test-connection + test-whisper
-│       ├── voice/             # Transcribe proxy, recording CRUD, file serving
+│       ├── voice/             # Recording CRUD, file serving, transcribe
+│       ├── activities/        # Activity CRUD + daily logs
+│       ├── therapy/           # Therapy items CRUD + backfill endpoint
+│       ├── people/            # People identity CRUD (name + aliases)
+│       ├── processing/        # Task status list + retry + clear
 │       ├── export/            # Streaming markdown export
-│       └── health/            # Liveness check (unauthenticated basic, detailed with auth)
+│       └── health/            # Liveness check
 ├── components/
-│   ├── editor/                # MarkdownEditor, Toolbar, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
-│   ├── layout/                # Sidebar, BottomNav, Header, UserMenu, ThemePicker, ServiceStatus
-│   ├── entry/                 # InsightsPanel, SimilarEntries, RecordingsList, EntryLinks
+│   ├── editor/                # MarkdownEditor, Toolbar, SearchReplace, VoiceRecorder, TagInput, VersionHistory, TemplateSelector
+│   ├── layout/                # Sidebar, BottomNav, Header, UserMenu, ThemePicker, ServiceStatus, ProcessingStatus
+│   ├── entry/                 # InsightsPanel, SimilarEntries, RecordingsList, EntryLinks, ActivityChecklist, TherapyItemsInline
 │   ├── dashboard/             # MoodChart, MoodHeatmap, TopicCloud, RecentEntries
 │   ├── reflections/           # ReflectionCard, GenerateReflection
 │   └── ui/                    # shadcn/ui primitives (Button, Card, Dialog, etc.)
 ├── hooks/
-│   └── use-voice-recorder.ts  # MediaRecorder hook with full cleanup on unmount
+│   ├── use-voice-recorder.ts  # MediaRecorder hook with full cleanup on unmount
+│   └── use-therapy-enabled.ts # Cached therapy setting hook (shared across components)
 ├── lib/
 │   ├── db/
-│   │   ├── schema.ts          # Drizzle schema — 15 tables, all with user_id
+│   │   ├── schema.ts          # Drizzle schema — 20 tables, all with user_id
 │   │   ├── index.ts           # SQLite connection (WAL mode, foreign keys ON, auto-migration)
 │   │   └── migrate.ts         # FTS5 virtual table + sync triggers (legacy, superseded by index.ts)
 │   ├── auth/
@@ -93,11 +99,15 @@ src/
 │   │   └── session.ts         # Server-side getSession() helper
 │   ├── ai/
 │   │   ├── config.ts          # Load AI settings from user_settings table
-│   │   ├── client.ts          # OpenAI-compatible fetch wrapper (chat + embeddings)
-│   │   ├── prompts.ts         # All prompt templates with XML delimiters + injection guards
-│   │   ├── extract.ts         # Insight extraction pipeline (fire-and-forget)
-│   │   ├── embed-entry.ts     # Embedding generation + sqlite-vec storage (cached table creation)
+│   │   ├── client.ts          # OpenAI-compatible fetch wrapper (chat + embeddings, 5min timeout)
+│   │   ├── prompts.ts         # All prompt templates with injection guards (insights, formatting, therapy, transcription cleanup)
+│   │   ├── extract.ts         # Insight extraction + people alias resolution + categorized tag creation
+│   │   ├── embed-entry.ts     # Embedding generation + sqlite-vec storage
 │   │   └── reflections.ts     # Weekly/monthly reflection generation
+│   ├── processing/
+│   │   └── runner.ts          # Background task queue (per-user locks, atomic SQL claim, retry logic)
+│   ├── transcription.ts       # Recording marker wrap/strip/replace utilities
+│   ├── constants.ts           # Shared constants (VOICE_DIR)
 │   ├── sanitize.ts            # DOMPurify HTML sanitization (restrictive allowlist)
 │   ├── validation.ts          # Zod schemas for all API inputs (date validation, URL protocol checks)
 │   ├── encryption.ts          # AES-256-GCM + PBKDF2 (600k iterations, timingSafeEqual)
@@ -120,23 +130,28 @@ public/
 
 ## Database Schema (src/lib/db/schema.ts)
 
-15 tables. All application tables have `user_id` FK with cascade delete.
+20 tables. All application tables have `user_id` FK with cascade delete.
 
 **Auth (managed by better-auth):** users (with `is_admin`), sessions, accounts, verifications
 
 **Global:** app_settings (key-value, used for `registration_open`)
 
 **Application:**
-- `user_settings` — id, user_id, ai_provider, ai_endpoint_url, ai_model_name, ai_api_key, embedding_*, whisper_endpoint_url
-- `entries` — id, user_id, date (unique per user), title, content (HTML), word_count, template_used
+- `user_settings` — id, user_id, ai_provider, ai_endpoint_url, ai_model_name, ai_api_key, embedding_*, whisper_endpoint_url, therapy_enabled
+- `entries` — id, user_id, date (unique per user), title, generated_title, content (HTML), formatted_content, word_count, template_used, is_session_day
 - `entry_versions` — id, entry_id, user_id, version_number (unique per entry), title, content, content_hash
 - `entry_links` — id, source_entry_id, target_entry_id, user_id (unique on source+target)
 - `insights` — id, entry_id, user_id, mood, mood_score (-1..1), summary, action_items/key_people/themes (JSON)
-- `tags` — id, user_id, name (unique per user), color, is_ai_generated
+- `tags` — id, user_id, name (unique per user), color, is_ai_generated. Prefixed names: `person:`, `event:`, `place:` for categorized tags
 - `entry_tags` — entry_id, tag_id (many-to-many)
 - `voice_recordings` — id, entry_id, user_id, audio_path, transcription, duration
 - `entry_embeddings` — id, entry_id, user_id, model_name, embedded_at
 - `reflections` — id, user_id, type, period_start/end, title, content, mood_summary, themes/key_insights/entry_ids (JSON)
+- `activities` — id, user_id, name, emoji, type (good/bad), sort_order, active
+- `activity_logs` — id, user_id, activity_id, entry_id, date, completed, source (manual/ai). Unique on (user_id, activity_id, date)
+- `therapy_items` — id, user_id, entry_id, description, type (topic/takeaway), priority, status (pending/discussed/resolved), session_entry_id
+- `processing_tasks` — id, user_id, entry_id, recording_id, type, status, retries, max_retries, error_message
+- `people` — id, user_id, name (unique per user), aliases (JSON array), relationship, notes
 
 **Virtual tables (raw SQL in auto-migration, not in Drizzle schema):**
 - `entries_fts` — FTS5 on title+content, synced via triggers
@@ -225,15 +240,24 @@ This project uses **shadcn/ui v4 with Base UI** (not Radix). Key difference:
   <DialogTrigger asChild><Button>Click me</Button></DialogTrigger>
   ```
 
-### AI Pipeline
+### AI Processing Pipeline
 
-AI features are fire-and-forget. After an entry saves:
-1. `extractInsights()` calls the AI endpoint, parses JSON response, upserts insights + auto-creates tags
-2. `embedEntry()` generates an embedding and stores in sqlite-vec
+After an entry saves, tasks are queued to `processing_tasks` table and processed sequentially per-user:
 
-Both run with `.catch((err) => console.error(...))` — they never block the save response.
+1. **Formatting** — LLM formats raw content into clean HTML + generates a title (JSON mode)
+2. **Insights** — extracts mood, themes, people (resolved via aliases), events, places, action items. Auto-creates prefixed tags (`person:`, `event:`, `place:`)
+3. **Embedding** — generates vector embedding for semantic search via sqlite-vec
+4. **Therapy** (if enabled) — on regular days: extracts therapy-worthy topics from main content. On session days: matches pending items + extracts takeaways
+5. **Transcription** (for recordings) — Whisper → LLM cleanup (fixes homophones using people/activity context) → wraps in `<div data-recording-id="...">` marker → appends to entry → queues follow-up tasks
 
-Prompts use XML delimiters (`<entry>`, `<transcription>`, `<entries>`) and explicit instructions to ignore user-injected instructions.
+Key files:
+- `src/lib/processing/runner.ts` — task queue with per-user locks, atomic SQL claim, retry logic
+- `src/lib/transcription.ts` — recording marker wrap/strip/replace utilities
+- `src/lib/ai/prompts.ts` — all prompt templates with injection guards
+
+Recording markers are stripped before AI processing so the LLM never sees `data-recording-id` attributes.
+
+Prompts use XML delimiters (`<entry>`, `<session>`) and explicit instructions to ignore user-injected instructions.
 
 ### Auth & Registration
 
@@ -259,38 +283,41 @@ When adding new CSS that should be theme-aware, use the existing CSS variables (
 
 ### Mobile Navigation
 
-- Desktop (md+): sidebar with full nav (6 items including Reflections)
-- Mobile (<md): bottom tab bar with 5 tabs (Home, Calendar, Write, Search, Settings)
+- Desktop (md+): sidebar with full nav (Dashboard, Today, Calendar, Search, Reflections, Therapy*, Settings)
+- Mobile (<md): bottom tab bar (Home, Write, Search, Therapy*, Settings)
+- Therapy nav item only appears when therapy is enabled (via `useTherapyEnabled()` cached hook)
 - No hamburger menu — clean split
 - Bottom nav respects safe area for devices with home indicators/notches
 
 ### Voice Recording Flow
 
-The voice recorder saves recordings BEFORE transcription so audio is never lost.
+All recordings are saved to disk BEFORE transcription so audio is never lost. Transcription is always handled by the background pipeline.
 
 1. User clicks **Record** → MediaRecorder captures audio (webm/opus) with **Pause/Resume** support
 2. User clicks **Stop** → audio blob available for preview
-3. User has three options:
-   - **Transcribe** — saves recording to disk first, then sends to Whisper. If transcription fails, recording is still saved
-   - **Save** — saves recording without transcription (when Whisper is unavailable or not needed)
-   - **Discard** — deletes the unsaved recording
-4. **Upload** button allows importing existing audio files (any audio format, max 50MB)
-5. Transcribe route auto-detects Whisper API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`) with 5-minute timeout
-6. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
-7. Recordings stored on disk (`/data/voice/<nanoid>.webm`) with metadata in `voice_recordings` table
-8. **Download** button on each saved recording for export
-9. Recordings visible below tags section with playback controls on all screen sizes
-10. Supports 20+ minute recordings (body size limit: 50MB, nginx proxy_read_timeout: 300s)
+3. User clicks **Save & Transcribe** — saves recording to disk, queues background transcription (Whisper → LLM cleanup → append with recording ID marker → AI pipeline)
+4. **Upload** button allows importing existing audio files (any format, max 50MB) — same background pipeline
+5. **Re-transcribe** button on saved recordings — re-runs Whisper + LLM cleanup, replaces text in entry using recording ID marker
+6. Background transcription: Whisper auto-detects API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`) with 5-minute timeout
+7. LLM cleanup runs after Whisper — fixes homophones and contextual errors using known people names, activities, and recent themes
+8. Transcribed text is wrapped in `<div data-recording-id="...">` markers for identification and re-transcription
+9. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
+10. Recordings stored on disk (`/data/voice/<timestamp>_<nanoid>.webm`) with metadata in `voice_recordings` table
+11. `VOICE_DIR` is defined once in `src/lib/constants.ts` — all voice endpoints import from there
+12. Supports 20+ minute recordings (body size limit: 50MB, nginx proxy_read_timeout: 300s)
 
 ### Entry Page Structure
 
 The entry page (`/entry/[date]`) has:
 - **Header row 1:** date + save status + word count
 - **Header row 2:** Record, Upload, Pause/Resume, Template, Version History (with clear), Delete buttons
-- **Title input:** borderless, large font
-- **Tiptap editor:** rich text with toolbar
+- **Title input:** borderless, large font (AI-generated title shown with sparkle icon)
+- **Raw/Formatted tabs:** toggle between raw editor and AI-formatted view with Regenerate button
+- **Tiptap editor:** rich text with toolbar + search & replace (Ctrl+F/Ctrl+H)
 - **Tags section:** below editor
-- **Recordings list:** below tags (visible on all screens, with download/delete per recording)
+- **Activities:** checklist with optimistic toggle (manual + AI auto-detection)
+- **Therapy items:** inline card (if therapy enabled) — shows extracted topics, session agenda, takeaways. Session day toggle
+- **Recordings list:** below therapy (visible on all screens, with playback/download/delete/re-transcribe per recording)
 - **Mobile (< lg):** AI Insights, Linked Entries, Similar Entries shown inline below recordings
 - **Desktop (lg+):** same content in a sidebar on the right
 

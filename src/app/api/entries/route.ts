@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, sqlite } from "@/lib/db";
-import { entries, entryVersions, insights } from "@/lib/db/schema";
+import { entries, insights } from "@/lib/db/schema";
 import { eq, and, like, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { nanoid } from "nanoid";
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { date, title, content, templateUsed, therapyContent, hasTherapyNotes, isSessionDay } = parsed.data;
+  const { date, title, content, templateUsed, isSessionDay } = parsed.data;
 
   const now = new Date();
   const wc = wordCount(content || "");
@@ -114,8 +114,6 @@ export async function POST(request: NextRequest) {
       const updates = ["title = ?", "content = ?", "word_count = ?", "updated_at = ?"];
       const values: unknown[] = [title, content, wc, Math.floor(now.getTime() / 1000)];
 
-      if (therapyContent !== undefined) { updates.push("therapy_content = ?"); values.push(therapyContent); }
-      if (hasTherapyNotes !== undefined) { updates.push("has_therapy_notes = ?"); values.push(hasTherapyNotes ? 1 : 0); }
       if (isSessionDay !== undefined) { updates.push("is_session_day = ?"); values.push(isSessionDay ? 1 : 0); }
 
       values.push(current.id);
@@ -150,8 +148,6 @@ export async function POST(request: NextRequest) {
       content: content || "",
       wordCount: wc,
       templateUsed: templateUsed || null,
-      therapyContent: therapyContent || null,
-      hasTherapyNotes: hasTherapyNotes || false,
       isSessionDay: isSessionDay || false,
       createdAt: now,
       updatedAt: now,
@@ -166,8 +162,6 @@ export async function POST(request: NextRequest) {
       await db.update(entries)
         .set({
           title, content, wordCount: wc, updatedAt: now,
-          therapyContent: therapyContent || null,
-          hasTherapyNotes: hasTherapyNotes || false,
           isSessionDay: isSessionDay || false,
         })
         .where(eq(entries.id, existing.id));

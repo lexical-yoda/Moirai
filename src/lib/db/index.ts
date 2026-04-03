@@ -37,19 +37,17 @@ function migrateExisting(db: Database.Database) {
   // Add columns that may be missing from older schema versions
   safeAlter(db, "ALTER TABLE entries ADD COLUMN generated_title TEXT");
   safeAlter(db, "ALTER TABLE entries ADD COLUMN formatted_content TEXT");
-  safeAlter(db, "ALTER TABLE entries ADD COLUMN has_therapy_notes INTEGER DEFAULT 0");
-  safeAlter(db, "ALTER TABLE entries ADD COLUMN therapy_content TEXT");
-  safeAlter(db, "ALTER TABLE entries ADD COLUMN therapy_formatted_content TEXT");
   safeAlter(db, "ALTER TABLE entries ADD COLUMN is_session_day INTEGER DEFAULT 0");
   safeAlter(db, "ALTER TABLE user_settings ADD COLUMN therapy_enabled INTEGER DEFAULT 0");
+  safeAlter(db, "ALTER TABLE therapy_items ADD COLUMN type TEXT NOT NULL DEFAULT 'topic'");
 
   // Create tables that may not exist yet
   db.exec(`
     CREATE TABLE IF NOT EXISTS therapy_items (
       id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-      description TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'medium',
-      status TEXT NOT NULL DEFAULT 'pending',
+      description TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'topic',
+      priority TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'pending',
       session_entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
@@ -107,6 +105,18 @@ function migrateExisting(db: Database.Database) {
   // Fix activity_logs unique index to include user_id (safe to attempt — fails if already correct)
   safeAlter(db, "DROP INDEX IF EXISTS activity_logs_unique_idx");
   safeAlter(db, "CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(user_id, activity_id, date)");
+
+  // People identity mapping
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS people (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, aliases TEXT NOT NULL DEFAULT '[]',
+      relationship TEXT, notes TEXT,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS people_user_name_idx ON people(user_id, name);
+  `);
 }
 
 function initializeTables(db: Database.Database) {
@@ -166,7 +176,6 @@ function initializeTables(db: Database.Database) {
       date TEXT NOT NULL, title TEXT DEFAULT '', generated_title TEXT,
       content TEXT DEFAULT '', formatted_content TEXT,
       word_count INTEGER DEFAULT 0, template_used TEXT,
-      has_therapy_notes INTEGER DEFAULT 0, therapy_content TEXT, therapy_formatted_content TEXT,
       is_session_day INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
@@ -246,8 +255,8 @@ function initializeTables(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS therapy_items (
       id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-      description TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'medium',
-      status TEXT NOT NULL DEFAULT 'pending',
+      description TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'topic',
+      priority TEXT NOT NULL DEFAULT 'medium', status TEXT NOT NULL DEFAULT 'pending',
       session_entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
@@ -259,6 +268,15 @@ function initializeTables(db: Database.Database) {
       retries INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 3,
       error_message TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS people (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, aliases TEXT NOT NULL DEFAULT '[]',
+      relationship TEXT, notes TEXT,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS people_user_name_idx ON people(user_id, name);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
       title, content, content='entries', content_rowid='rowid'

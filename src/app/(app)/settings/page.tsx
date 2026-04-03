@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users, Target, Plus, Heart } from "lucide-react";
+import { Check, Loader2, X, Wifi, Bot, Mic, Sparkles, Shield, Trash2, Users, Target, Plus, Heart, UserPlus } from "lucide-react";
 import { invalidateTherapyCache } from "@/hooks/use-therapy-enabled";
 import { toast } from "sonner";
 import { useSession } from "@/lib/auth/client";
@@ -287,15 +287,15 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5" /> Therapy Tracking</CardTitle>
           <CardDescription>
-            Track therapy topics, session notes, and items to discuss
+            AI scans your journal entries for therapy-relevant topics and tracks them across sessions
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Enable Therapy Tracking</p>
               <p className="text-xs text-muted-foreground">
-                Adds therapy notes section to journal entries and a dedicated therapy page
+                Adds therapy items to entries and a dedicated therapy page
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -308,8 +308,14 @@ export default function SettingsPage() {
               <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-background after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
             </label>
           </div>
+
+          {therapyEnabled && <TherapyBackfill />}
         </CardContent>
       </Card>
+
+      {/* People */}
+      <Separator />
+      <PeopleSettings />
 
       {/* Activity Tracking */}
       <Separator />
@@ -538,5 +544,282 @@ function ActivitySettings() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ── People Settings Component ──────────────────────────────────────────
+
+interface Person {
+  id: string;
+  name: string;
+  aliases: string[];
+  relationship: string | null;
+  notes: string | null;
+}
+
+function PeopleSettings() {
+  const [people, setPeople] = useState<Person[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newAliases, setNewAliases] = useState("");
+  const [newRelationship, setNewRelationship] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAliases, setEditAliases] = useState("");
+  const [editRelationship, setEditRelationship] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/people");
+        if (res.ok) setPeople(await res.json());
+      } catch (err) {
+        console.error("[Settings] Failed to load people:", err);
+      } finally { setLoading(false); }
+    }
+    load();
+  }, []);
+
+  async function handleAdd() {
+    if (!newName.trim()) return;
+    setAdding(true);
+    try {
+      const aliases = newAliases.split(",").map((a) => a.trim()).filter(Boolean);
+      const res = await fetch("/api/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), aliases, relationship: newRelationship || undefined }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setPeople((prev) => [...prev, created]);
+        setNewName("");
+        setNewAliases("");
+        setNewRelationship("");
+        toast.success("Person added");
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to add person");
+      }
+    } finally { setAdding(false); }
+  }
+
+  async function handleUpdate(id: string) {
+    const aliases = editAliases.split(",").map((a) => a.trim()).filter(Boolean);
+    const res = await fetch(`/api/people/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ aliases, relationship: editRelationship || null }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setPeople((prev) => prev.map((p) => p.id === id ? updated : p));
+      setEditingId(null);
+      toast.success("Updated");
+    } else {
+      toast.error("Failed to update");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/people/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setPeople((prev) => prev.filter((p) => p.id !== id));
+      toast.success("Person removed");
+    } else {
+      toast.error("Failed to delete");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><UserPlus className="h-5 w-5" /> People</CardTitle>
+        <CardDescription>
+          Map names and nicknames to identities — AI will recognize them across entries
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Add new person */}
+        <div className="flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-32">
+            <Label className="text-xs">Name</Label>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Sarah" onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
+          </div>
+          <div className="flex-1 min-w-48">
+            <Label className="text-xs">Aliases <span className="text-muted-foreground">(comma-separated)</span></Label>
+            <Input value={newAliases} onChange={(e) => setNewAliases(e.target.value)} placeholder="e.g., Mom, Amma, S" />
+          </div>
+          <div className="w-28">
+            <Label className="text-xs">Relationship</Label>
+            <Input value={newRelationship} onChange={(e) => setNewRelationship(e.target.value)} placeholder="e.g., family" />
+          </div>
+          <Button onClick={handleAdd} disabled={adding || !newName.trim()} size="sm" className="h-9 gap-1">
+            <Plus className="h-4 w-4" /> Add
+          </Button>
+        </div>
+
+        {/* People list */}
+        {loading ? (
+          <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : people.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No people added yet. Add someone above to help AI recognize them in your entries.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {people.map((person) => (
+              <div key={person.id} className="rounded-md border p-2.5 group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium">{person.name}</span>
+                    {person.relationship && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600">{person.relationship}</span>
+                    )}
+                    {person.aliases.length > 0 && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        aka {person.aliases.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        if (editingId === person.id) {
+                          setEditingId(null);
+                        } else {
+                          setEditingId(person.id);
+                          setEditAliases(person.aliases.join(", "));
+                          setEditRelationship(person.relationship || "");
+                        }
+                      }}
+                    >
+                      {editingId === person.id ? "Cancel" : "Edit"}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(person.id)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+
+                {editingId === person.id && (
+                  <div className="mt-2 flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Label className="text-xs">Aliases</Label>
+                      <Input value={editAliases} onChange={(e) => setEditAliases(e.target.value)} placeholder="Comma-separated aliases" className="h-8 text-sm" />
+                    </div>
+                    <div className="w-28">
+                      <Label className="text-xs">Relationship</Label>
+                      <Input value={editRelationship} onChange={(e) => setEditRelationship(e.target.value)} className="h-8 text-sm" />
+                    </div>
+                    <Button size="sm" className="h-8" onClick={() => handleUpdate(person.id)}>Save</Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Therapy Backfill Component ──────────────────────────────────────────
+
+interface BackfillStats {
+  unprocessedCount: number;
+  totalEntries: number;
+  processedCount: number;
+  queuedCount: number;
+  totalWords: number;
+  oldestDate: string | null;
+  newestDate: string | null;
+}
+
+function TherapyBackfill() {
+  const [stats, setStats] = useState<BackfillStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/therapy/backfill");
+        if (res.ok) setStats(await res.json());
+      } catch (err) {
+        console.error("[Settings] Failed to load backfill stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  async function handleBackfill() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/therapy/backfill", { method: "POST" });
+      const data = await res.json();
+      setResult(data.message);
+      toast.success(data.message);
+      const statsRes = await fetch("/api/therapy/backfill");
+      if (statsRes.ok) setStats(await statsRes.json());
+    } catch (err) {
+      toast.error("Failed to start backfill");
+      console.error("[Settings] Backfill error:", err);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (loading) return <div className="text-xs text-muted-foreground animate-pulse">Checking past entries...</div>;
+  if (!stats) return null;
+
+  if (stats.unprocessedCount === 0 && stats.queuedCount === 0) {
+    return (
+      <div className="rounded-md border border-green-200 dark:border-green-900 bg-green-500/5 px-3 py-2">
+        <p className="text-xs text-green-700 dark:text-green-400">
+          All {stats.totalEntries} entries have been scanned for therapy topics.
+        </p>
+      </div>
+    );
+  }
+
+  if (stats.queuedCount > 0) {
+    return (
+      <div className="rounded-md border border-blue-200 dark:border-blue-900 bg-blue-500/5 px-3 py-2">
+        <p className="text-xs text-blue-700 dark:text-blue-400">
+          {stats.queuedCount} entries queued for processing. Check the notification bell for progress.
+        </p>
+      </div>
+    );
+  }
+
+  const estimatedMinutes = Math.ceil(stats.unprocessedCount * 0.3);
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-md border border-amber-200 dark:border-amber-900 bg-amber-500/5 px-3 py-2.5 space-y-1">
+        <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+          {stats.unprocessedCount} entries haven&apos;t been scanned for therapy topics
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {stats.totalWords.toLocaleString()} words &middot;{" "}
+          {stats.oldestDate} to {stats.newestDate} &middot;{" "}
+          ~{estimatedMinutes} min estimated
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Runs in the background. If interrupted, progress is saved — re-run to finish the rest.
+        </p>
+      </div>
+      <Button size="sm" onClick={handleBackfill} disabled={running} className="gap-1.5">
+        {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Heart className="h-3 w-3" />}
+        {running ? "Queuing..." : "Scan Past Entries"}
+      </Button>
+      {result && <p className="text-xs text-muted-foreground">{result}</p>}
+    </div>
   );
 }

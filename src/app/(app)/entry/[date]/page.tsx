@@ -13,6 +13,7 @@ import { SimilarEntries } from "@/components/entry/similar-entries";
 import { RecordingsList } from "@/components/entry/recordings-list";
 import { EntryLinks } from "@/components/entry/entry-links";
 import { ActivityChecklist } from "@/components/entry/activity-checklist";
+import { TherapyItemsInline } from "@/components/entry/therapy-items";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,9 +39,6 @@ interface Entry {
   formattedContent: string | null;
   wordCount: number;
   templateUsed: string | null;
-  therapyContent: string | null;
-  therapyFormattedContent: string | null;
-  hasTherapyNotes: boolean;
   isSessionDay: boolean;
 }
 
@@ -104,13 +102,7 @@ export default function EntryPage() {
   const [formattedEditorKey, setFormattedEditorKey] = useState(100);
   const [reformatting, setReformatting] = useState(false);
   const therapyEnabled = useTherapyEnabled();
-  const [hasTherapyNotes, setHasTherapyNotes] = useState(false);
   const [isSessionDay, setIsSessionDay] = useState(false);
-  const [therapyContent, setTherapyContent] = useState("");
-  const [therapyEditorKey, setTherapyEditorKey] = useState(200);
-  const [therapyView, setTherapyView] = useState<"raw" | "formatted">("raw");
-  const [therapyFormattedContent, setTherapyFormattedContent] = useState("");
-  const [therapyFormattedEditorKey, setTherapyFormattedEditorKey] = useState(300);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
 
@@ -190,12 +182,7 @@ export default function EntryPage() {
           setFormattedContent(entryData.formattedContent || "");
           setFormattedEditorKey((k) => k + 1);
           setEditorKey((k) => k + 1);
-          setHasTherapyNotes(entryData.hasTherapyNotes || false);
           setIsSessionDay(entryData.isSessionDay || false);
-          setTherapyContent(entryData.therapyContent || "");
-          setTherapyFormattedContent(entryData.therapyFormattedContent || "");
-          setTherapyEditorKey((k) => k + 1);
-          setTherapyFormattedEditorKey((k) => k + 1);
 
           const [versionsRes, entryTagsRes] = await Promise.all([
             fetch(`/api/entries/${entryData.id}/versions`),
@@ -276,7 +263,7 @@ export default function EntryPage() {
   function handleTranscription(text: string, newEntryId?: string) {
     // If entry was just created by the voice recorder, update state
     if (newEntryId && !entry) {
-      setEntry({ id: newEntryId, date, title: "", generatedTitle: null, content: `<p>${text}</p>`, formattedContent: null, wordCount: 0, templateUsed: null, therapyContent: null, therapyFormattedContent: null, hasTherapyNotes: false, isSessionDay: false });
+      setEntry({ id: newEntryId, date, title: "", generatedTitle: null, content: `<p>${text}</p>`, formattedContent: null, wordCount: 0, templateUsed: null, isSessionDay: false });
       setContent(`<p>${text}</p>`);
       setEditorKey((k) => k + 1);
       loadSidebarData(newEntryId);
@@ -285,6 +272,10 @@ export default function EntryPage() {
 
     // Escape HTML entities to prevent injection from transcription
     const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Skip if this text is already in the content (prevents duplicate appends)
+    if (content && content.includes(escaped)) return;
+
     const newContent = content
       ? `${content}<p>${escaped}</p>`
       : `<p>${escaped}</p>`;
@@ -327,23 +318,10 @@ export default function EntryPage() {
     setVersions(await versionsRes.json());
   }
 
-  function handleTherapyToggle(enabled: boolean) {
-    setHasTherapyNotes(enabled);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes: enabled, therapyContent, isSessionDay }), 1000);
-  }
-
   function handleSessionDayToggle(enabled: boolean) {
     setIsSessionDay(enabled);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes, therapyContent, isSessionDay: enabled }), 1000);
-  }
-
-  function handleTherapyContentChange(newContent: string) {
-    setTherapyContent(newContent);
-    if (initialLoadRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => save(title, content, { hasTherapyNotes, therapyContent: newContent, isSessionDay }), 2000);
+    saveTimerRef.current = setTimeout(() => save(title, content, { isSessionDay: enabled }), 1000);
   }
 
   async function handleReformat() {
@@ -368,10 +346,6 @@ export default function EntryPage() {
               if (data.generatedTitle && !title) {
                 setTitle(data.generatedTitle);
                 setEntry((prev) => prev ? { ...prev, generatedTitle: data.generatedTitle } : prev);
-              }
-              if (data.therapyFormattedContent) {
-                setTherapyFormattedContent(data.therapyFormattedContent);
-                setTherapyFormattedEditorKey((k) => k + 1);
               }
               break;
             }
@@ -401,19 +375,7 @@ export default function EntryPage() {
     }
   }
 
-  function handleTherapyFormattedContentChange(newContent: string) {
-    setTherapyFormattedContent(newContent);
-    if (entry) {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(async () => {
-        await fetch(`/api/entries/${entry.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, content, therapyFormattedContent: newContent }),
-        });
-      }, 2000);
-    }
-  }
+
 
   async function handleDelete() {
     if (!entry) return;
@@ -572,68 +534,13 @@ export default function EntryPage() {
         {/* Activities */}
         <ActivityChecklist date={date} entryId={entry?.id || null} />
 
-        {/* Therapy Notes */}
-        {therapyEnabled && (
-          <>
-            <Separator />
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasTherapyNotes}
-                  onChange={(e) => handleTherapyToggle(e.target.checked)}
-                  className="rounded border-input"
-                />
-                <span className="text-sm font-medium">Therapy Notes</span>
-              </label>
-
-              {hasTherapyNotes && (
-                <>
-                  <label className="flex items-center gap-2 cursor-pointer ml-6">
-                    <input
-                      type="checkbox"
-                      checked={isSessionDay}
-                      onChange={(e) => handleSessionDayToggle(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    <span className="text-sm text-muted-foreground">Session Day</span>
-                  </label>
-
-                  {/* Therapy Raw / Formatted tabs */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setTherapyView("raw")}
-                      className={`px-3 py-1 text-sm rounded-md transition-colors ${therapyView === "raw" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                    >
-                      Raw
-                    </button>
-                    <button
-                      onClick={() => setTherapyView("formatted")}
-                      className={`px-3 py-1 text-sm rounded-md transition-colors ${therapyView === "formatted" ? "bg-accent font-medium" : "text-muted-foreground hover:text-foreground"}`}
-                    >
-                      Formatted
-                    </button>
-                  </div>
-
-                  {therapyView === "raw" ? (
-                    <MarkdownEditor
-                      key={therapyEditorKey}
-                      content={therapyContent}
-                      onChange={handleTherapyContentChange}
-                      placeholder="Write your therapy notes here..."
-                    />
-                  ) : (
-                    <MarkdownEditor
-                      key={therapyFormattedEditorKey}
-                      content={therapyFormattedContent || "<p><em>No formatted version yet.</em></p>"}
-                      onChange={handleTherapyFormattedContentChange}
-                      placeholder="Formatted therapy notes..."
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          </>
+        {/* Therapy Items */}
+        {therapyEnabled && entry && (
+          <TherapyItemsInline
+            entryId={entry.id}
+            isSessionDay={isSessionDay}
+            onSessionDayChange={handleSessionDayToggle}
+          />
         )}
 
         {/* Recordings — visible on all screen sizes */}

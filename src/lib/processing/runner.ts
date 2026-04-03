@@ -45,13 +45,12 @@ export async function queueEntryTasks(userId: string, entryId: string, content: 
   await queueTask(userId, entryId, "insights");
   await queueTask(userId, entryId, "embedding");
 
-  // Check if entry has therapy notes with actual content
-  const entry = await db.query.entries.findFirst({
-    where: eq(entries.id, entryId),
-    columns: { hasTherapyNotes: true, therapyContent: true },
+  // Queue therapy extraction if therapy is enabled for this user
+  const settings = await db.query.userSettings.findFirst({
+    where: eq(userSettings.userId, userId),
+    columns: { therapyEnabled: true },
   });
-  if (entry?.hasTherapyNotes && entry.therapyContent &&
-      entry.therapyContent.replace(/<[^>]*>/g, " ").trim().length >= 10) {
+  if (settings?.therapyEnabled) {
     await queueTask(userId, entryId, "therapy");
   }
 }
@@ -200,17 +199,47 @@ async function handleTranscription(task: TaskRecord) {
 
   if (!text) throw new Error("Transcription failed — all API formats returned empty or errored");
 
+  // LLM cleanup — fix transcription errors using context
+  let cleanedText = text;
+  try {
+    const { getAIConfig } = await import("@/lib/ai/config");
+    const { chatCompletion } = await import("@/lib/ai/client");
+    const { transcriptionCleanupPrompt } = await import("@/lib/ai/prompts");
+    const { people: peopleTable, activities: activitiesTable } = await import("@/lib/db/schema");
+    const { safeJsonParse } = await import("@/lib/json");
+
+    const config = await getAIConfig(task.userId);
+    const [userPeople, userActivities] = await Promise.all([
+      db.query.people.findMany({ where: eq(peopleTable.userId, task.userId), columns: { name: true, aliases: true } }),
+      db.query.activities.findMany({ where: eq(activitiesTable.userId, task.userId), columns: { name: true } }),
+    ]);
+
+    const knownContext = {
+      people: userPeople.flatMap((p) => [p.name, ...safeJsonParse(p.aliases, [])]),
+      activities: userActivities.map((a) => a.name),
+    };
+
+    const messages = transcriptionCleanupPrompt(text, knownContext);
+    const response = await chatCompletion(config, messages, { temperature: 0.1, maxTokens: 2048 });
+    if (response.content && response.content.trim().length > 0) {
+      cleanedText = response.content.trim();
+    }
+  } catch (err) {
+    console.error("[Processing] Transcription cleanup failed, using raw text:", err instanceof Error ? err.message : err);
+  }
+
   // Update the recording
   await db.update(voiceRecordings)
-    .set({ transcription: text })
+    .set({ transcription: cleanedText })
     .where(eq(voiceRecordings.id, task.recordingId));
 
-  // Append to entry content and queue AI pipeline
+  // Append to entry content with recording ID marker
   if (task.entryId) {
+    const { wrapTranscription } = await import("@/lib/transcription");
     const entry = await db.query.entries.findFirst({ where: eq(entries.id, task.entryId) });
     if (entry) {
-      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const newContent = entry.content ? `${entry.content}<p>${escaped}</p>` : `<p>${escaped}</p>`;
+      const wrappedContent = wrapTranscription(task.recordingId!, cleanedText);
+      const newContent = entry.content ? `${entry.content}${wrappedContent}` : wrappedContent;
       await db.update(entries)
         .set({ content: newContent, updatedAt: new Date() })
         .where(eq(entries.id, task.entryId));
@@ -220,8 +249,12 @@ async function handleTranscription(task: TaskRecord) {
       await queueTask(task.userId, task.entryId, "insights");
       await queueTask(task.userId, task.entryId, "embedding");
 
-      if (entry.hasTherapyNotes && entry.therapyContent &&
-          entry.therapyContent.replace(/<[^>]*>/g, " ").trim().length >= 10) {
+      // Queue therapy if enabled for user
+      const userSettingsRow = await db.query.userSettings.findFirst({
+        where: eq(userSettings.userId, task.userId),
+        columns: { therapyEnabled: true },
+      });
+      if (userSettingsRow?.therapyEnabled) {
         await queueTask(task.userId, task.entryId, "therapy");
       }
     }
@@ -239,9 +272,11 @@ async function handleFormatting(task: TaskRecord) {
   const { getAIConfig } = await import("@/lib/ai/config");
   const { chatCompletion } = await import("@/lib/ai/client");
   const { contentFormattingPrompt } = await import("@/lib/ai/prompts");
+  const { stripRecordingMarkers } = await import("@/lib/transcription");
 
   const config = await getAIConfig(task.userId);
-  const plaintext = entry.content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const cleanContent = stripRecordingMarkers(entry.content);
+  const plaintext = cleanContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   if (plaintext.length < 20) return;
 
   // Format content + generate title in one JSON call
@@ -264,31 +299,18 @@ async function handleFormatting(task: TaskRecord) {
     }
   }
 
+  // Strip any injected temporal transitions the model may have added
+  let formatted = parsed.formatted || formatResponse.content;
+  const injectedPhrases = /\b(but )?(the next day|the following day|later that week|the day after|subsequently|afterwards),?\s*/gi;
+  formatted = formatted.replace(injectedPhrases, "");
+
   const updates: Record<string, unknown> = {
-    formattedContent: parsed.formatted || formatResponse.content,
+    formattedContent: formatted,
     updatedAt: new Date(),
   };
 
   if (!entry.title && parsed.title) {
     updates.generatedTitle = parsed.title.replace(/^["']|["']$/g, "").trim();
-  }
-
-  // Format therapy content if present
-  if (entry.therapyContent) {
-    const therapyPlain = entry.therapyContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-    if (therapyPlain.length >= 20) {
-      const therapyMessages = contentFormattingPrompt(therapyPlain);
-      const therapyResponse = await chatCompletion(config, therapyMessages, {
-        temperature: 0.3,
-        responseFormat: { type: "json_object" },
-      });
-      try {
-        const therapyParsed = JSON.parse(therapyResponse.content);
-        updates.therapyFormattedContent = therapyParsed.formatted || therapyResponse.content;
-      } catch {
-        updates.therapyFormattedContent = therapyResponse.content;
-      }
-    }
   }
 
   await db.update(entries).set(updates).where(eq(entries.id, task.entryId));
@@ -302,8 +324,9 @@ async function handleInsights(task: TaskRecord) {
   const entry = await db.query.entries.findFirst({ where: eq(entries.id, task.entryId) });
   if (!entry || !entry.content) return;
 
+  const { stripRecordingMarkers } = await import("@/lib/transcription");
   const { extractInsights } = await import("@/lib/ai/extract");
-  await extractInsights(task.userId, task.entryId, entry.content);
+  await extractInsights(task.userId, task.entryId, stripRecordingMarkers(entry.content));
 }
 
 // ── Embedding ─────────────────────────────────────────────────────────────
@@ -314,8 +337,9 @@ async function handleEmbedding(task: TaskRecord) {
   const entry = await db.query.entries.findFirst({ where: eq(entries.id, task.entryId) });
   if (!entry || !entry.content) return;
 
+  const { stripRecordingMarkers } = await import("@/lib/transcription");
   const { embedEntry } = await import("@/lib/ai/embed-entry");
-  await embedEntry(task.userId, task.entryId, entry.content);
+  await embedEntry(task.userId, task.entryId, stripRecordingMarkers(entry.content));
 }
 
 // ── Therapy ───────────────────────────────────────────────────────────────
@@ -324,24 +348,26 @@ async function handleTherapy(task: TaskRecord) {
   if (!task.entryId) throw new Error("No entryId for therapy task");
 
   const entry = await db.query.entries.findFirst({ where: eq(entries.id, task.entryId) });
-  if (!entry) return;
-  if (!entry.hasTherapyNotes || !entry.therapyContent) return;
+  if (!entry || !entry.content) return;
 
   const { getAIConfig } = await import("@/lib/ai/config");
   const { chatCompletion } = await import("@/lib/ai/client");
-  const { therapyItemExtractionPrompt, therapySessionMatchingPrompt } = await import("@/lib/ai/prompts");
+  const { therapyItemExtractionPrompt, therapySessionMatchingPrompt, therapyTakeawayExtractionPrompt } = await import("@/lib/ai/prompts");
   const { therapyItems } = await import("@/lib/db/schema");
+  const { stripRecordingMarkers } = await import("@/lib/transcription");
 
   const config = await getAIConfig(task.userId);
-  const plaintext = entry.therapyContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  if (plaintext.length < 10) return;
+  const cleanContent = stripRecordingMarkers(entry.content);
+  const plaintext = cleanContent.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (plaintext.length < 20) return;
 
   if (entry.isSessionDay) {
-    // Session day: match pending items
+    // Session day: match pending items against session content
     const pendingItems = await db.query.therapyItems.findMany({
       where: and(
         eq(therapyItems.userId, task.userId),
-        eq(therapyItems.status, "pending")
+        eq(therapyItems.status, "pending"),
+        eq(therapyItems.type, "topic")
       ),
     });
 
@@ -375,8 +401,48 @@ async function handleTherapy(task: TaskRecord) {
         }
       }
     }
+
+    // Also extract takeaways (therapist suggestions, breakthroughs, homework)
+    const takeawayMessages = therapyTakeawayExtractionPrompt(plaintext);
+    const takeawayResponse = await chatCompletion(config, takeawayMessages, {
+      temperature: 0.3,
+      responseFormat: { type: "json_object" },
+    });
+
+    let takeawayResult: { takeaways: Array<{ description: string }> };
+    try {
+      takeawayResult = JSON.parse(takeawayResponse.content);
+    } catch {
+      const match = takeawayResponse.content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (match) {
+        takeawayResult = JSON.parse(match[1]);
+      } else {
+        takeawayResult = { takeaways: [] };
+      }
+    }
+
+    if (takeawayResult.takeaways?.length) {
+      const now = new Date();
+      for (const item of takeawayResult.takeaways.slice(0, 10)) {
+        if (!item.description || typeof item.description !== "string") continue;
+        const description = item.description.slice(0, 1000).trim();
+        if (!description) continue;
+        await db.insert(therapyItems).values({
+          id: nanoid(),
+          userId: task.userId,
+          entryId: task.entryId!,
+          description,
+          type: "takeaway",
+          priority: "medium",
+          status: "resolved",
+          sessionEntryId: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
   } else {
-    // Non-session day: extract new therapy items
+    // Non-session day: extract therapy topics from main entry content
     const messages = therapyItemExtractionPrompt(plaintext);
     const response = await chatCompletion(config, messages, {
       temperature: 0.3,
@@ -408,6 +474,7 @@ async function handleTherapy(task: TaskRecord) {
           userId: task.userId,
           entryId: task.entryId!,
           description,
+          type: "topic",
           priority,
           status: "pending",
           sessionEntryId: null,

@@ -9,8 +9,6 @@ export const entrySchema = z.object({
   title: z.string().max(500).optional().default(""),
   content: z.string().max(500_000).optional().default(""),
   templateUsed: z.string().max(50).optional().nullable(),
-  therapyContent: z.string().max(500_000).optional().nullable(),
-  hasTherapyNotes: z.boolean().optional(),
   isSessionDay: z.boolean().optional(),
 });
 
@@ -18,9 +16,6 @@ export const entryUpdateSchema = z.object({
   title: z.string().max(500).optional().default(""),
   content: z.string().max(500_000).optional().default(""),
   formattedContent: z.string().max(500_000).optional().nullable(),
-  therapyContent: z.string().max(500_000).optional().nullable(),
-  therapyFormattedContent: z.string().max(500_000).optional().nullable(),
-  hasTherapyNotes: z.boolean().optional(),
   isSessionDay: z.boolean().optional(),
 });
 

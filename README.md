@@ -26,6 +26,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 
 **Journaling**
 - Rich markdown editor with formatting toolbar
+- Search & replace (Ctrl+F / Ctrl+H)
 - One entry per day with autosave
 - Raw & AI-formatted content views
 - Auto-generated titles
@@ -44,6 +45,8 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Download recordings
 - Multiple recordings per entry
 - Auto-transcription via Whisper (background pipeline)
+- LLM-powered transcription cleanup (fixes homophones using context)
+- Re-transcribe recordings with one click
 
 </td>
 </tr>
@@ -65,6 +68,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Background processing pipeline with notification bell
 - Mood analysis & scoring
 - Theme, people, event, and place extraction
+- People identity mapping (aliases resolve to canonical names)
 - Auto-formatted content & generated titles
 - Action items detection
 - Weekly & monthly reflections
@@ -76,11 +80,12 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 <td>
 
 **Therapy Tracking** *(optional)*
-- Therapy notes section on entries
-- AI extracts therapy items from notes
-- Session day matching (pending → discussed → resolved)
-- Dedicated /therapy page with status management
-- Calendar indicators for therapy & session days
+- AI scans journal entries for therapy-worthy topics automatically
+- Inline therapy items on each entry page (edit, add, delete)
+- Session day toggle — shows agenda of pending items + captures takeaways
+- Dedicated /therapy page (Pending / Discussed / Resolved / Takeaways)
+- Backfill past entries when enabling therapy
+- Calendar indicators for session days
 
 </td>
 <td>
@@ -128,7 +133,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 | Database | SQLite via Drizzle ORM + better-sqlite3 |
 | Auth | better-auth (credentials, sessions, admin roles) |
 | UI | Tailwind CSS v4 + shadcn/ui (Base UI) + Lucide |
-| Editor | Tiptap (task lists, highlights, code blocks) |
+| Editor | Tiptap (task lists, highlights, code blocks, search & replace) |
 | Charts | Recharts + custom SVG heatmap |
 | Fonts | Syne (display) + DM Mono (monospace) |
 | AI | Any OpenAI-compatible API |
@@ -280,10 +285,13 @@ Settings: Endpoint `http://<ip>:5000`
 | Model | Size | Accuracy | Notes |
 |-------|------|----------|-------|
 | `tiny` | ~75MB | Basic | Fastest, good for testing |
-| `base` | ~150MB | Decent | Default, good for short notes |
+| `base` | ~150MB | Decent | Good for short notes |
 | `small` | ~500MB | Good | Best bang for buck |
 | `medium` | ~1.5GB | Very good | For longer recordings |
-| `large-v3` | ~3GB | Best | Needs GPU |
+| `large-v3-turbo` | ~1.5GB | Excellent | Best speed/accuracy tradeoff (recommended) |
+| `large-v3` | ~3GB | Best | Most accurate, needs GPU |
+
+> Moirai also runs an LLM pass after transcription to fix contextual errors (homophones, names) using your personal context (known people, activities). This works with any Whisper model size.
 
 ---
 
@@ -291,10 +299,13 @@ Settings: Endpoint `http://<ip>:5000`
 
 | Use Case | Model | Size |
 |----------|-------|------|
-| Journal insights | Llama 3.1 8B Instruct (Q4_K_M) | ~4.6GB |
-| Better quality | Mistral 7B Instruct (Q4_K_M) | ~4GB |
+| Lightweight (recommended) | Qwen 2.5 3B Instruct (Q4_K_M) | ~2GB |
+| Lightweight alt | Llama 3.2 3B Instruct (Q4_K_M) | ~2GB |
+| Higher quality | Llama 3.1 8B Instruct (Q4_K_M) | ~4.6GB |
 | Structured output | Qwen 2.5 7B Instruct (Q4_K_M) | ~4.4GB |
 | Dedicated embeddings | nomic-embed-text v1.5 | ~270MB |
+
+> 3B models handle all Moirai tasks well (mood extraction, formatting, therapy topics are all structured JSON). 8B models are better but slower — overkill for most journaling use cases.
 
 ---
 
@@ -305,21 +316,21 @@ src/
   app/
     (auth)/              Login & register (with theme picker)
     (app)/               Authenticated pages (sidebar + bottom nav)
-      entry/[date]/      Journal editor (raw/formatted, therapy notes)
-      calendar/          Monthly calendar with therapy indicators
+      entry/[date]/      Journal editor (raw/formatted, therapy items, recordings)
+      calendar/          Monthly calendar with session day indicators
       search/            Keyword + semantic search
       therapy/           Therapy items management
       reflections/       AI reflections
-      settings/          Integrations, activities, therapy toggle, admin
+      settings/          Integrations, activities, people, therapy toggle, admin
     api/                 40+ API routes
   components/
-    editor/              Editor, toolbar, voice recorder, tags, versions, templates
+    editor/              Editor, toolbar, search & replace, voice recorder, tags, versions, templates
     layout/              Sidebar, bottom nav, header, theme picker, processing bell
-    entry/               Insights, similar entries, recordings, entry links, activities
+    entry/               Insights, similar entries, recordings, entry links, activities, therapy items
     dashboard/           Mood chart, heatmap, topics, activity grid, recent entries
     reflections/         Cards, generate dialog
   lib/
-    db/                  Schema (19 tables), auto-migrating connection, FTS5
+    db/                  Schema (20 tables), auto-migrating connection, FTS5
     auth/                better-auth config, admin/registration helpers
     ai/                  Configurable client, prompts, extraction, embeddings, reflections
     processing/          Background task queue (transcription, formatting, insights, therapy)

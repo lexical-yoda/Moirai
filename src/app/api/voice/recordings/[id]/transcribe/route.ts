@@ -67,6 +67,22 @@ export async function POST(
   });
   if (!recording) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Already transcribed — return existing unless force re-transcribe
+  const force = new URL(request.url).searchParams.get("force") === "true";
+  if (recording.transcription && !force) {
+    return NextResponse.json({ text: recording.transcription });
+  }
+
+  // Cancel any pending background transcription tasks for this recording
+  const { processingTasks } = await import("@/lib/db/schema");
+  const { or } = await import("drizzle-orm");
+  await db.update(processingTasks)
+    .set({ status: "failed", errorMessage: "Manual transcription triggered", updatedAt: new Date() })
+    .where(and(
+      eq(processingTasks.recordingId, id),
+      or(eq(processingTasks.status, "pending"), eq(processingTasks.status, "running"))
+    ));
+
   const whisperUrl = await getWhisperUrl(session.user.id);
   if (!whisperUrl) {
     return NextResponse.json({ error: "Whisper not configured. Add the endpoint URL in Settings." }, { status: 503 });
@@ -99,18 +115,37 @@ export async function POST(
     return NextResponse.json({ error: "Empty transcription" }, { status: 502 });
   }
 
-  // Update the recording with transcription
+  // LLM cleanup
+  let cleanedText = text;
+  try {
+    const { getAIConfig } = await import("@/lib/ai/config");
+    const { chatCompletion } = await import("@/lib/ai/client");
+    const { transcriptionCleanupPrompt } = await import("@/lib/ai/prompts");
+    const config = await getAIConfig(session.user.id);
+    const messages = transcriptionCleanupPrompt(text);
+    const response = await chatCompletion(config, messages, { temperature: 0.1, maxTokens: 2048 });
+    if (response.content?.trim()) cleanedText = response.content.trim();
+  } catch (err) {
+    console.error("[Voice] Transcription cleanup failed, using raw text:", err instanceof Error ? err.message : err);
+  }
+
+  // Update the recording with cleaned transcription
   await db.update(voiceRecordings)
-    .set({ transcription: text })
+    .set({ transcription: cleanedText })
     .where(eq(voiceRecordings.id, id));
 
-  // Also append transcription to the entry content and queue AI processing
+  // Append transcription to entry content with recording ID marker
   if (recording.entryId) {
     const { entries } = await import("@/lib/db/schema");
+    const { wrapTranscription, replaceTranscriptionInContent } = await import("@/lib/transcription");
     const entry = await db.query.entries.findFirst({ where: eq(entries.id, recording.entryId) });
     if (entry) {
-      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const newContent = entry.content ? `${entry.content}<p>${escaped}</p>` : `<p>${escaped}</p>`;
+      // If re-transcribing, replace existing marker; otherwise append
+      let newContent = replaceTranscriptionInContent(entry.content || "", id, cleanedText);
+      if (newContent === null) {
+        const wrapped = wrapTranscription(id, cleanedText);
+        newContent = entry.content ? `${entry.content}${wrapped}` : wrapped;
+      }
       await db.update(entries)
         .set({ content: newContent, updatedAt: new Date() })
         .where(eq(entries.id, recording.entryId));
@@ -123,5 +158,5 @@ export async function POST(
     }
   }
 
-  return NextResponse.json({ text });
+  return NextResponse.json({ text: cleanedText });
 }

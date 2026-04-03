@@ -50,7 +50,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if ("error" in jsonResult) return jsonResult.error;
   const parsed = parseBody(entryUpdateSchema, jsonResult.data);
   if (!parsed.success) return NextResponse.json({ error: parsed.error }, { status: 400 });
-  const { title, content, formattedContent, therapyContent, therapyFormattedContent, hasTherapyNotes, isSessionDay } = parsed.data;
+  const { title, content, formattedContent, isSessionDay } = parsed.data;
   const now = new Date();
   const wc = wordCount(content || "");
   const newHash = contentHash(content || "");
@@ -78,9 +78,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const values: unknown[] = [title, content, wc, Math.floor(now.getTime() / 1000)];
 
     if (formattedContent !== undefined) { updates.push("formatted_content = ?"); values.push(formattedContent); }
-    if (therapyContent !== undefined) { updates.push("therapy_content = ?"); values.push(therapyContent); }
-    if (therapyFormattedContent !== undefined) { updates.push("therapy_formatted_content = ?"); values.push(therapyFormattedContent); }
-    if (hasTherapyNotes !== undefined) { updates.push("has_therapy_notes = ?"); values.push(hasTherapyNotes ? 1 : 0); }
     if (isSessionDay !== undefined) { updates.push("is_session_day = ?"); values.push(isSessionDay ? 1 : 0); }
 
     values.push(id);

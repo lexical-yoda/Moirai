@@ -4,7 +4,7 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, Trash2, Download, Send, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Mic, Trash2, Download, Send, Loader2, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 interface Recording {
@@ -50,7 +50,7 @@ export function RecordingsList({ recordings, onDelete, onTranscribed }: Recordin
   async function handleTranscribe(id: string) {
     setTranscribingId(id);
     try {
-      const res = await fetch(`/api/voice/recordings/${id}/transcribe`, { method: "POST" });
+      const res = await fetch(`/api/voice/recordings/${id}/transcribe?force=true`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || "Transcription failed");
@@ -84,21 +84,19 @@ export function RecordingsList({ recordings, onDelete, onTranscribed }: Recordin
                 </span>
               </div>
               <div className="flex items-center gap-0.5">
-                {!rec.transcription && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => handleTranscribe(rec.id)}
-                    disabled={transcribingId === rec.id}
-                    title="Transcribe recording"
-                  >
-                    {transcribingId === rec.id
-                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                      : <Send className="h-3 w-3" />
-                    }
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => handleTranscribe(rec.id)}
+                  disabled={transcribingId === rec.id}
+                  title={rec.transcription ? "Re-transcribe recording" : "Transcribe recording"}
+                >
+                  {transcribingId === rec.id
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : rec.transcription ? <RefreshCw className="h-3 w-3" /> : <Send className="h-3 w-3" />
+                  }
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
