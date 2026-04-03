@@ -27,6 +27,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 **Journaling**
 - Rich markdown editor with formatting toolbar
 - Search & replace (Ctrl+F / Ctrl+H)
+- Live updates — content, recordings, and insights refresh automatically as background processing completes
 - One entry per day with autosave
 - Raw & AI-formatted content views
 - Auto-generated titles
@@ -47,6 +48,7 @@ Moirai is a self-hosted journal that works completely offline. AI features like 
 - Auto-transcription via Whisper (background pipeline)
 - LLM-powered transcription cleanup (fixes homophones using context)
 - Re-transcribe recordings with one click
+- Multi-file upload (sorted by creation date)
 
 </td>
 </tr>
@@ -200,7 +202,7 @@ server {
 
 ### llama.cpp *(recommended)*
 
-Download a [GGUF model](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) and place it in a models directory.
+Download a GGUF model and place it in a models directory. A 3B model is recommended — handles all Moirai tasks and leaves VRAM for other services.
 
 ```yaml
 services:
@@ -218,8 +220,8 @@ services:
               count: all
               capabilities: [gpu]
     command: >
-      -m /models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
-      --host 0.0.0.0 --port 8080 --embeddings -ngl 99 -c 4096
+      -m /models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+      --host 0.0.0.0 --port 8080 --embeddings -ngl 99 -c 8192
     restart: unless-stopped
 ```
 
@@ -271,12 +273,12 @@ services:
     ports:
       - "5000:9000"
     environment:
-      - ASR_MODEL=base
+      - ASR_MODEL=large-v3-turbo
       - ASR_ENGINE=faster_whisper
     restart: unless-stopped
 ```
 
-For GPU: use image tag `latest-gpu` and add `deploy.resources.reservations.devices`.
+> **Recommended:** Run Whisper on CPU and dedicate GPU to llama.cpp. The LLM transcription cleanup step corrects accuracy issues from CPU inference. For GPU Whisper, use image tag `latest-gpu` — requires matching CUDA version with your driver.
 
 Settings: Endpoint `http://<ip>:5000`
 

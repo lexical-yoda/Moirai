@@ -107,7 +107,7 @@ export default function EntryPage() {
   const initialLoadRef = useRef(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastContentRef = useRef<string>("");
-  const lastRecordingCountRef = useRef<number>(0);
+  const lastFormattedRef = useRef<string>("");
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -117,7 +117,8 @@ export default function EntryPage() {
     };
   }, []);
 
-  // Poll for background processing changes (transcription, formatting, insights)
+  // Poll for background processing changes every 5 seconds
+  // Continuously checks for content/recording/insight changes — lightweight (one fetch)
   useEffect(() => {
     if (!entry?.id) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -125,73 +126,51 @@ export default function EntryPage() {
     }
 
     const entryId = entry.id;
-    lastContentRef.current = content;
-    lastRecordingCountRef.current = recordings.length;
 
     async function pollForChanges() {
       try {
-        // Check if there are active tasks for this entry
-        const procRes = await fetch("/api/processing");
-        if (!procRes.ok) return;
-        const procData = await procRes.json();
-        const activeTasks = procData.tasks?.filter(
-          (t: { entryId: string; status: string }) =>
-            t.entryId === entryId && (t.status === "pending" || t.status === "running")
-        );
+        // Fetch fresh entry data
+        const entryRes = await fetch(`/api/entries?date=${date}`);
+        if (!entryRes.ok) return;
+        const fresh = await entryRes.json();
+        if (!fresh) return;
 
-        // If no active tasks AND we had some before, do a final refresh
-        // Also refresh if we detect any completed tasks recently
-        const recentCompleted = procData.tasks?.filter(
-          (t: { entryId: string; status: string; updatedAt: string }) =>
-            t.entryId === entryId && t.status === "completed" &&
-            new Date(t.updatedAt).getTime() > Date.now() - 10_000
-        );
+        // Update content if changed on server (transcription appended, etc.)
+        if (fresh.content && fresh.content !== lastContentRef.current) {
+          setContent(fresh.content);
+          setEditorKey((k) => k + 1);
+          lastContentRef.current = fresh.content;
+        }
 
-        if (recentCompleted?.length > 0 || activeTasks?.length === 0) {
-          // Reload entry data to pick up transcription appends, formatted content, generated title
-          const entryRes = await fetch(`/api/entries?date=${date}`);
-          if (entryRes.ok) {
-            const fresh = await entryRes.json();
-            if (fresh) {
-              // Update content if it changed on the server (e.g., transcription appended)
-              if (fresh.content && fresh.content !== lastContentRef.current) {
-                setContent(fresh.content);
-                setEditorKey((k) => k + 1);
-                lastContentRef.current = fresh.content;
-              }
-              if (fresh.formattedContent && fresh.formattedContent !== formattedContent) {
-                setFormattedContent(fresh.formattedContent);
-                setFormattedEditorKey((k) => k + 1);
-              }
-              if (fresh.generatedTitle && !title) {
-                setTitle(fresh.generatedTitle);
-                setEntry((prev) => prev ? { ...prev, generatedTitle: fresh.generatedTitle } : prev);
-              }
-            }
-          }
+        // Update formatted content
+        if (fresh.formattedContent && fresh.formattedContent !== lastFormattedRef.current) {
+          setFormattedContent(fresh.formattedContent);
+          setFormattedEditorKey((k) => k + 1);
+          lastFormattedRef.current = fresh.formattedContent;
+        }
 
-          // Reload recordings (transcription text may have been added)
-          const recRes = await fetch(`/api/voice/recordings?entryId=${entryId}`);
-          if (recRes.ok) {
-            const recs = await recRes.json();
+        // Update generated title
+        if (fresh.generatedTitle && !title) {
+          setTitle(fresh.generatedTitle);
+          setEntry((prev) => prev ? { ...prev, generatedTitle: fresh.generatedTitle } : prev);
+        }
+
+        // Reload recordings
+        const recRes = await fetch(`/api/voice/recordings?entryId=${entryId}`);
+        if (recRes.ok) {
+          const recs = await recRes.json();
+          if (JSON.stringify(recs) !== JSON.stringify(recordings)) {
             setRecordings(recs);
           }
-
-          // Reload insights
-          loadSidebarData(entryId);
         }
 
-        // Stop polling when no active tasks remain
-        if (!activeTasks?.length && pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
+        // Reload insights
+        loadSidebarData(entryId);
       } catch (err) {
         console.error("[Entry] Poll error:", err);
       }
     }
 
-    // Start polling every 5 seconds
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(pollForChanges, 5_000);
 
@@ -266,7 +245,9 @@ export default function EntryPage() {
           setEntry(entryData);
           setTitle(entryData.title || entryData.generatedTitle || "");
           setContent(entryData.content || "");
+          lastContentRef.current = entryData.content || "";
           setFormattedContent(entryData.formattedContent || "");
+          lastFormattedRef.current = entryData.formattedContent || "";
           setFormattedEditorKey((k) => k + 1);
           setEditorKey((k) => k + 1);
           setIsSessionDay(entryData.isSessionDay || false);
@@ -313,10 +294,7 @@ export default function EntryPage() {
         const versionsRes = await fetch(`/api/entries/${data.id}/versions`);
         setVersions(await versionsRes.json());
 
-        // Restart polling to pick up newly queued processing tasks
-        if (!pollRef.current) {
-          pollRef.current = setInterval(() => {}, 5_000); // Will be replaced by the effect
-        }
+        // Polling is already running continuously — no restart needed
       }
     } finally {
       setSaving(false);
@@ -336,6 +314,7 @@ export default function EntryPage() {
 
   function handleContentChange(newContent: string) {
     setContent(newContent);
+    lastContentRef.current = newContent; // Prevent polling from overwriting user's typing
     handleChange(title, newContent);
   }
 

@@ -257,6 +257,15 @@ Key files:
 
 Recording markers are stripped before AI processing so the LLM never sees `data-recording-id` attributes.
 
+Token limits per task (set to minimize generation time):
+- Formatting: 4096 (needs to reproduce full entry)
+- Insight extraction: 512
+- Activity detection: 256
+- Transcription cleanup: 2048
+- Therapy extraction: 512
+- Session matching: 256
+- Takeaway extraction: 512
+
 Prompts use XML delimiters (`<entry>`, `<session>`) and explicit instructions to ignore user-injected instructions.
 
 ### Auth & Registration
@@ -296,15 +305,36 @@ All recordings are saved to disk BEFORE transcription so audio is never lost. Tr
 1. User clicks **Record** → MediaRecorder captures audio (webm/opus) with **Pause/Resume** support
 2. User clicks **Stop** → audio blob available for preview
 3. User clicks **Save & Transcribe** — saves recording to disk, queues background transcription (Whisper → LLM cleanup → append with recording ID marker → AI pipeline)
-4. **Upload** button allows importing existing audio files (any format, max 50MB) — same background pipeline
+4. **Upload** button allows importing multiple audio files at once (any format, max 50MB each) — sorted by `lastModified` timestamp for chronological order, uploaded sequentially, same background pipeline
 5. **Re-transcribe** button on saved recordings — re-runs Whisper + LLM cleanup, replaces text in entry using recording ID marker
-6. Background transcription: Whisper auto-detects API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`) with 5-minute timeout
+6. Background transcription: Whisper auto-detects API format (tries `/transcribe`, `/asr`, `/v1/audio/transcriptions`) with 10-minute timeout
 7. LLM cleanup runs after Whisper — fixes homophones and contextual errors using known people names, activities, and recent themes
+8. Whisper duration is captured from the response and backfilled to recording if client-side detection returned 0
 8. Transcribed text is wrapped in `<div data-recording-id="...">` markers for identification and re-transcription
 9. If `entryId` is null (new day), voice recorder creates the entry first via `POST /api/entries`
 10. Recordings stored on disk (`/data/voice/<timestamp>_<nanoid>.webm`) with metadata in `voice_recordings` table
 11. `VOICE_DIR` is defined once in `src/lib/constants.ts` — all voice endpoints import from there
 12. Supports 20+ minute recordings (body size limit: 50MB, nginx proxy_read_timeout: 300s)
+
+### Reactivity
+
+The app auto-updates without manual page refreshes:
+
+- **Entry page** — polls every 5 seconds. Picks up transcription appends, formatted content, generated titles, recording updates, and insight changes. Uses refs to avoid overwriting user's active typing.
+- **Therapy items** — polls every 10 seconds for background-generated items.
+- **Dashboard, Calendar, Therapy page** — refresh on window focus (when user navigates back).
+- **Settings therapy toggle** — uses `useSyncExternalStore` to immediately update sidebar/bottom-nav across all components.
+- **Processing bell** — polls every 30s (5s when open). Clear button removes completed/failed tasks.
+
+### Timeouts
+
+| What | Timeout |
+|------|---------|
+| LLM chat completion | 10 min |
+| Embedding generation | 30 sec |
+| Whisper transcription | 10 min |
+| LLM/Whisper connection test | 5 sec |
+| Health check ping | 3 sec |
 
 ### Entry Page Structure
 

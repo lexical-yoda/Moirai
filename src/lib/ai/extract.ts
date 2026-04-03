@@ -46,6 +46,7 @@ export async function extractInsights(userId: string, entryId: string, content: 
 
     const response = await chatCompletion(config, messages, {
       temperature: 0.3,
+      maxTokens: 512,
       responseFormat: { type: "json_object" },
     });
 
@@ -200,6 +201,7 @@ async function detectActivities(userId: string, entryId: string, plaintext: stri
 
     const response = await chatCompletion(config, messages, {
       temperature: 0.1,
+      maxTokens: 256,
       responseFormat: { type: "json_object" },
     });
 

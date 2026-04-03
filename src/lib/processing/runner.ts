@@ -381,6 +381,7 @@ async function handleTherapy(task: TaskRecord) {
       const messages = therapySessionMatchingPrompt(plaintext, pendingItems);
       const response = await chatCompletion(config, messages, {
         temperature: 0.2,
+        maxTokens: 256,
         responseFormat: { type: "json_object" },
       });
 
@@ -412,6 +413,7 @@ async function handleTherapy(task: TaskRecord) {
     const takeawayMessages = therapyTakeawayExtractionPrompt(plaintext);
     const takeawayResponse = await chatCompletion(config, takeawayMessages, {
       temperature: 0.3,
+      maxTokens: 512,
       responseFormat: { type: "json_object" },
     });
 
@@ -452,6 +454,7 @@ async function handleTherapy(task: TaskRecord) {
     const messages = therapyItemExtractionPrompt(plaintext);
     const response = await chatCompletion(config, messages, {
       temperature: 0.3,
+      maxTokens: 512,
       responseFormat: { type: "json_object" },
     });
 
