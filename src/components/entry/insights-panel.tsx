@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +56,7 @@ function moodColor(score: number): string {
 export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, onPlaceEdit, onPlaceRemove }: InsightsPanelProps) {
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const submittingRef = useRef(false);
   if (loading) {
     return (
       <Card>
@@ -146,6 +147,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                   editingItem === person ? (
                     <form key={person} className="flex gap-1" onSubmit={(e) => {
                       e.preventDefault();
+                      submittingRef.current = true;
                       if (editValue.trim() && editValue.trim() !== person) {
                         onPersonEdit?.(person, editValue.trim());
                       }
@@ -156,7 +158,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                         onChange={(e) => setEditValue(e.target.value)}
                         className="h-6 w-20 sm:w-28 text-xs px-1.5"
                         autoFocus
-                        onBlur={() => setEditingItem(null)}
+                        onBlur={() => { if (!submittingRef.current) setEditingItem(null); submittingRef.current = false; }}
                         onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}
                       />
                     </form>
@@ -215,6 +217,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                   editingItem === `place:${place}` ? (
                     <form key={place} className="flex gap-1" onSubmit={(e) => {
                       e.preventDefault();
+                      submittingRef.current = true;
                       if (editValue.trim() && editValue.trim() !== place) {
                         onPlaceEdit?.(place, editValue.trim());
                       }
@@ -225,7 +228,7 @@ export function InsightsPanel({ insight, loading, onPersonEdit, onPersonRemove, 
                         onChange={(e) => setEditValue(e.target.value)}
                         className="h-6 w-20 sm:w-28 text-xs px-1.5"
                         autoFocus
-                        onBlur={() => setEditingItem(null)}
+                        onBlur={() => { if (!submittingRef.current) setEditingItem(null); submittingRef.current = false; }}
                         onKeyDown={(e) => e.key === "Escape" && setEditingItem(null)}
                       />
                     </form>

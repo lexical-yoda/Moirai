@@ -170,7 +170,7 @@ export const reflections = sqliteTable("reflections", {
   periodStart: text("period_start").notNull(), // YYYY-MM-DD
   periodEnd: text("period_end").notNull(), // YYYY-MM-DD
   title: text("title"),
-  content: text("content"), // markdown, encrypted
+  content: text("content"), // markdown
   moodSummary: text("mood_summary"),
   themes: text("themes"), // JSON
   keyInsights: text("key_insights"), // JSON

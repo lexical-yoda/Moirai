@@ -71,7 +71,7 @@ function migrateExisting(db: Database.Database) {
       date TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(activity_id, date);
+    CREATE UNIQUE INDEX IF NOT EXISTS activity_logs_unique_idx ON activity_logs(user_id, activity_id, date);
 
     CREATE TABLE IF NOT EXISTS entry_links (
       id TEXT PRIMARY KEY NOT NULL,
