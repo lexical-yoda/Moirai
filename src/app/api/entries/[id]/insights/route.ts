@@ -71,49 +71,65 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const currentPeople: string[] = safeJsonParse(insight.keyPeople, []);
 
   if (data.action === "edit" && data.oldName && data.newName) {
-    const updated = currentPeople.map((p) => p === data.oldName ? data.newName! : p);
-    await db.update(insights)
-      .set({ keyPeople: JSON.stringify(updated) })
-      .where(eq(insights.id, insight.id));
-
-    // Also update person: tags
-    const oldTag = await db.query.tags.findFirst({
-      where: and(eq(tags.userId, session.user.id), eq(tags.name, `person:${data.oldName.toLowerCase()}`)),
-    });
-    if (oldTag) {
-      // Try to find or create the new tag
-      const newTagName = `person:${data.newName.toLowerCase()}`;
-      let newTag = await db.query.tags.findFirst({
-        where: and(eq(tags.userId, session.user.id), eq(tags.name, newTagName)),
-      });
-      if (!newTag) {
-        const { nanoid } = await import("nanoid");
-        const tagId = nanoid();
-        await db.insert(tags).values({ id: tagId, userId: session.user.id, name: newTagName, isAiGenerated: true });
-        newTag = await db.query.tags.findFirst({ where: eq(tags.id, tagId) });
-      }
-      // Swap tag link
-      if (newTag) {
-        await db.delete(entryTags).where(and(eq(entryTags.entryId, id), eq(entryTags.tagId, oldTag.id)));
-        const existing = await db.query.entryTags.findFirst({
-          where: and(eq(entryTags.entryId, id), eq(entryTags.tagId, newTag.id)),
-        });
-        if (!existing) await db.insert(entryTags).values({ entryId: id, tagId: newTag.id });
-      }
-    }
-
-    // Replace in entry content
     const entry = await db.query.entries.findFirst({ where: eq(entries.id, id) });
-    if (entry?.content) {
-      const escaped = data.oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(escaped, "gi");
-      const newContent = entry.content.replace(regex, data.newName);
-      if (newContent !== entry.content) {
-        await db.update(entries).set({ content: newContent, updatedAt: new Date() }).where(eq(entries.id, id));
+    if (!entry) return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+
+    let contentChanged = false;
+
+    // Use LLM to contextually replace the person name in the entry content
+    try {
+      const { getAIConfig } = await import("@/lib/ai/config");
+      const { chatCompletion } = await import("@/lib/ai/client");
+      const { personRenamePrompt } = await import("@/lib/ai/prompts");
+      const { stripRecordingMarkers } = await import("@/lib/transcription");
+
+      const config = await getAIConfig(session.user.id);
+      const cleanContent = stripRecordingMarkers(entry.content || "");
+
+      const messages = personRenamePrompt(cleanContent, data.oldName, data.newName);
+      const response = await chatCompletion(config, messages, { temperature: 0.1, maxTokens: 4096 });
+
+      if (response.content?.trim() && response.content.trim() !== cleanContent) {
+        await db.update(entries)
+          .set({ content: response.content.trim(), formattedContent: null, updatedAt: new Date() })
+          .where(eq(entries.id, id));
+        contentChanged = true;
+      }
+    } catch (err) {
+      console.error("[Insights] LLM rename failed, falling back to regex:", err);
+      // Fallback: word-boundary regex replace on raw content only
+      if (entry.content) {
+        const escaped = data.oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(`\\b${escaped}\\b`, "gi");
+        const newContent = entry.content.replace(regex, data.newName);
+        if (newContent !== entry.content) {
+          await db.update(entries)
+            .set({ content: newContent, formattedContent: null, updatedAt: new Date() })
+            .where(eq(entries.id, id));
+          contentChanged = true;
+        }
       }
     }
 
-    return NextResponse.json({ keyPeople: updated });
+    if (!contentChanged) {
+      return NextResponse.json({ error: "Could not find references to rename — try editing the entry directly" }, { status: 400 });
+    }
+
+    // Clear old insights + tags — pipeline will regenerate them from corrected content
+    await db.delete(insights).where(eq(insights.entryId, id));
+    await db.delete(entryTags).where(eq(entryTags.entryId, id));
+
+    // Queue full AI pipeline to regenerate everything from corrected content
+    const { queueEntryTasks, cancelPendingTasks, processQueue } = await import("@/lib/processing/runner");
+    cancelPendingTasks(session.user.id, id).catch(() => {});
+    const freshEntry = await db.query.entries.findFirst({ where: eq(entries.id, id) });
+    if (freshEntry?.content) {
+      queueEntryTasks(session.user.id, id, freshEntry.content)
+        .then(() => processQueue(session.user.id))
+        .catch((err) => console.error("[Processing]", err));
+    }
+
+    return NextResponse.json({ keyPeople: [], reprocessing: true });
   }
 
   if (data.action === "remove" && data.oldName) {

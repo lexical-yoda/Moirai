@@ -468,18 +468,22 @@ export default function EntryPage() {
         body: JSON.stringify({ action: "edit", oldName, newName }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setInsight((prev) => prev ? { ...prev, keyPeople: data.keyPeople } : prev);
-        // Reload entry content since the name was replaced in text
+        // Reload entry content (LLM rewrote it)
         const entryRes = await fetch(`/api/entries?date=${date}`);
         if (entryRes.ok) {
           const fresh = await entryRes.json();
-          if (fresh?.content) {
-            setContent(fresh.content);
-            lastContentRef.current = fresh.content;
-            setEditorKey((k) => k + 1);
+          if (fresh) {
+            if (fresh.content) { setContent(fresh.content); lastContentRef.current = fresh.content; setEditorKey((k) => k + 1); }
+            setFormattedContent("");
+            lastFormattedRef.current = "";
           }
         }
+        setInsight(null);
+        setInsightLoading(true);
+        toast.success(`Renamed "${oldName}" to "${newName}" — re-processing entry`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || "Rename failed");
       }
     } catch (err) {
       console.error("[Entry] Person edit failed:", err);

@@ -90,6 +90,28 @@ Rules:
   ];
 }
 
+export function personRenamePrompt(entryContent: string, oldName: string, newName: string): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: `You are a text editing assistant. In the journal entry below, the word/name "${oldName}" was incorrectly transcribed. It actually refers to a person named "${newName}".
+
+Replace ONLY the references to this person with "${newName}". Do NOT replace the word "${oldName}" when it is used as a regular English word (not referring to a person).
+
+Rules:
+- Only replace when "${oldName}" refers to the person
+- Keep the rest of the text exactly the same — no rephrasing, no restructuring
+- Preserve all HTML tags exactly as they are
+- Return the full text with replacements made
+- If "${oldName}" only appears as a regular word and never as a person reference, return the text unchanged`,
+    },
+    {
+      role: "user",
+      content: entryContent,
+    },
+  ];
+}
+
 
 export function weeklyReflectionPrompt(entrySummaries: string): ChatMessage[] {
   return [
