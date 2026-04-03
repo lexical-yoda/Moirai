@@ -36,23 +36,26 @@ export function TherapyItemsInline({ entryId, isSessionDay, onSessionDayChange }
   const [newItem, setNewItem] = useState("");
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        // Load items for this entry
-        const [entryRes, pendingRes] = await Promise.all([
-          fetch(`/api/therapy?entryId=${entryId}`),
-          isSessionDay ? fetch("/api/therapy?status=pending") : Promise.resolve(null),
-        ]);
-        if (entryRes.ok) setEntryItems(await entryRes.json());
-        if (pendingRes?.ok) setPendingItems(await pendingRes.json());
-      } catch (err) {
-        console.error("[TherapyItems] Failed to load:", err);
-      } finally {
-        setLoading(false);
-      }
+  async function loadTherapyItems() {
+    try {
+      const [entryRes, pendingRes] = await Promise.all([
+        fetch(`/api/therapy?entryId=${entryId}`),
+        isSessionDay ? fetch("/api/therapy?status=pending") : Promise.resolve(null),
+      ]);
+      if (entryRes.ok) setEntryItems(await entryRes.json());
+      if (pendingRes?.ok) setPendingItems(await pendingRes.json());
+    } catch (err) {
+      console.error("[TherapyItems] Failed to load:", err);
+    } finally {
+      setLoading(false);
     }
-    load();
+  }
+
+  // Load on mount + poll every 10s to catch background-generated items
+  useEffect(() => {
+    loadTherapyItems();
+    const interval = setInterval(loadTherapyItems, 10_000);
+    return () => clearInterval(interval);
   }, [entryId, isSessionDay]);
 
   async function handleAdd() {

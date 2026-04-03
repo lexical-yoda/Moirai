@@ -54,6 +54,13 @@ export default function TherapyPage() {
 
   useEffect(() => { loadItems(); }, []);
 
+  // Refresh when tab regains focus (catches background-generated items)
+  useEffect(() => {
+    function handleFocus() { loadItems(); }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
   async function updateItem(id: string, updates: Record<string, string>) {
     try {
       const res = await fetch(`/api/therapy/${id}`, {

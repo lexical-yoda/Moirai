@@ -95,6 +95,13 @@ export default function DashboardPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Refresh when tab/window regains focus (e.g., user navigates back from /therapy)
+  useEffect(() => {
+    function handleFocus() { loadData(); }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadData]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">

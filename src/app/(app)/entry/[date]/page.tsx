@@ -105,13 +105,100 @@ export default function EntryPage() {
   const [isSessionDay, setIsSessionDay] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastContentRef = useRef<string>("");
+  const lastRecordingCountRef = useRef<number>(0);
 
-  // Cleanup save timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Poll for background processing changes (transcription, formatting, insights)
+  useEffect(() => {
+    if (!entry?.id) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+
+    const entryId = entry.id;
+    lastContentRef.current = content;
+    lastRecordingCountRef.current = recordings.length;
+
+    async function pollForChanges() {
+      try {
+        // Check if there are active tasks for this entry
+        const procRes = await fetch("/api/processing");
+        if (!procRes.ok) return;
+        const procData = await procRes.json();
+        const activeTasks = procData.tasks?.filter(
+          (t: { entryId: string; status: string }) =>
+            t.entryId === entryId && (t.status === "pending" || t.status === "running")
+        );
+
+        // If no active tasks AND we had some before, do a final refresh
+        // Also refresh if we detect any completed tasks recently
+        const recentCompleted = procData.tasks?.filter(
+          (t: { entryId: string; status: string; updatedAt: string }) =>
+            t.entryId === entryId && t.status === "completed" &&
+            new Date(t.updatedAt).getTime() > Date.now() - 10_000
+        );
+
+        if (recentCompleted?.length > 0 || activeTasks?.length === 0) {
+          // Reload entry data to pick up transcription appends, formatted content, generated title
+          const entryRes = await fetch(`/api/entries?date=${date}`);
+          if (entryRes.ok) {
+            const fresh = await entryRes.json();
+            if (fresh) {
+              // Update content if it changed on the server (e.g., transcription appended)
+              if (fresh.content && fresh.content !== lastContentRef.current) {
+                setContent(fresh.content);
+                setEditorKey((k) => k + 1);
+                lastContentRef.current = fresh.content;
+              }
+              if (fresh.formattedContent && fresh.formattedContent !== formattedContent) {
+                setFormattedContent(fresh.formattedContent);
+                setFormattedEditorKey((k) => k + 1);
+              }
+              if (fresh.generatedTitle && !title) {
+                setTitle(fresh.generatedTitle);
+                setEntry((prev) => prev ? { ...prev, generatedTitle: fresh.generatedTitle } : prev);
+              }
+            }
+          }
+
+          // Reload recordings (transcription text may have been added)
+          const recRes = await fetch(`/api/voice/recordings?entryId=${entryId}`);
+          if (recRes.ok) {
+            const recs = await recRes.json();
+            setRecordings(recs);
+          }
+
+          // Reload insights
+          loadSidebarData(entryId);
+        }
+
+        // Stop polling when no active tasks remain
+        if (!activeTasks?.length && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } catch (err) {
+        console.error("[Entry] Poll error:", err);
+      }
+    }
+
+    // Start polling every 5 seconds
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(pollForChanges, 5_000);
+
+    return () => {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, [entry?.id, date]);
 
   async function loadRecordings(entryId: string) {
     try {
@@ -226,12 +313,10 @@ export default function EntryPage() {
         const versionsRes = await fetch(`/api/entries/${data.id}/versions`);
         setVersions(await versionsRes.json());
 
-        // Refresh insights after save (AI extraction runs async on server)
-        const savedDate = date;
-        setTimeout(() => {
-          // Only refresh if still on the same entry
-          if (savedDate === date) loadSidebarData(data.id);
-        }, 5000);
+        // Restart polling to pick up newly queued processing tasks
+        if (!pollRef.current) {
+          pollRef.current = setInterval(() => {}, 5_000); // Will be replaced by the effect
+        }
       }
     } finally {
       setSaving(false);

@@ -36,6 +36,16 @@ export default function CalendarPage() {
     loadEntries();
   }, [currentMonth]);
 
+  // Refresh when tab regains focus (e.g., user edited entry and came back)
+  useEffect(() => {
+    function handleFocus() {
+      const month = format(currentMonth, "yyyy-MM");
+      fetch(`/api/entries?month=${month}`).then((r) => r.json()).then(setEntries).catch(() => {});
+    }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [currentMonth]);
+
   function handleDayClick(date: string) {
     router.push(`/entry/${date}`);
   }
