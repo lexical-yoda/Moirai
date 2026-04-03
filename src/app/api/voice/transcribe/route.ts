@@ -20,7 +20,7 @@ async function getWhisperUrl(userId: string): Promise<string | null> {
  * 3. whisper-asr-webservice: POST /asr?task=transcribe (audio_file in form)
  */
 async function tryTranscribe(baseUrl: string, file: Blob): Promise<Response> {
-  const timeout = 5 * 60 * 1000; // 5 minutes for long recordings
+  const timeout = 10 * 60 * 1000; // 10 minutes for long recordings
 
   const attempts = [
     // Custom sidecar format

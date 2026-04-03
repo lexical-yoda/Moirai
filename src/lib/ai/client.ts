@@ -22,7 +22,7 @@ export async function chatCompletion(
   options?: { temperature?: number; maxTokens?: number; responseFormat?: { type: string } }
 ): Promise<ChatResponse> {
   const url = `${config.endpointUrl}/v1/chat/completions`;
-  console.log(`[AI Client] POST ${url} (timeout: 180s)`);
+  console.log(`[AI Client] POST ${url} (timeout: 600s)`);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -47,7 +47,7 @@ export async function chatCompletion(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(300_000),
+    signal: AbortSignal.timeout(600_000),
   });
 
   if (!res.ok) {

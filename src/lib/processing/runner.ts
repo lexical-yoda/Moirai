@@ -160,7 +160,7 @@ async function handleTranscription(task: TaskRecord) {
 
   const fileBuffer = fs.readFileSync(filePath);
   const uint8 = new Uint8Array(fileBuffer);
-  const timeout = 5 * 60 * 1000;
+  const timeout = 10 * 60 * 1000;
 
   const attempts = [
     () => {
@@ -182,6 +182,7 @@ async function handleTranscription(task: TaskRecord) {
   ];
 
   let text = "";
+  let whisperDuration = 0;
   for (const attempt of attempts) {
     try {
       const res = await attempt();
@@ -190,6 +191,7 @@ async function handleTranscription(task: TaskRecord) {
       if (contentType.includes("text/html")) continue;
       const result = await res.json();
       text = result.text || result.transcript || "";
+      whisperDuration = result.duration || 0;
       if (text) break;
     } catch (err) {
       console.error("[Processing] Transcription attempt failed:", err instanceof Error ? err.message : err);
@@ -228,9 +230,13 @@ async function handleTranscription(task: TaskRecord) {
     console.error("[Processing] Transcription cleanup failed, using raw text:", err instanceof Error ? err.message : err);
   }
 
-  // Update the recording
+  // Update the recording (also fix duration if it was 0)
+  const updates: Record<string, unknown> = { transcription: cleanedText };
+  if (whisperDuration > 0 && (!recording.duration || recording.duration === 0)) {
+    updates.duration = Math.round(whisperDuration);
+  }
   await db.update(voiceRecordings)
-    .set({ transcription: cleanedText })
+    .set(updates)
     .where(eq(voiceRecordings.id, task.recordingId));
 
   // Append to entry content with recording ID marker

@@ -33,16 +33,34 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
   function getAudioDuration(blob: Blob): Promise<number> {
     return new Promise((resolve) => {
       const audio = new Audio();
-      audio.addEventListener("loadedmetadata", () => {
-        const dur = isFinite(audio.duration) ? Math.round(audio.duration) : 0;
-        URL.revokeObjectURL(audio.src);
+      const url = URL.createObjectURL(blob);
+      let resolved = false;
+
+      function done(dur: number) {
+        if (resolved) return;
+        resolved = true;
+        URL.revokeObjectURL(url);
         resolve(dur);
+      }
+
+      audio.addEventListener("loadedmetadata", () => {
+        if (isFinite(audio.duration) && audio.duration > 0) {
+          done(Math.round(audio.duration));
+        }
+        // Some formats report duration only after durationchange
       });
-      audio.addEventListener("error", () => {
-        URL.revokeObjectURL(audio.src);
-        resolve(0);
+      audio.addEventListener("durationchange", () => {
+        if (isFinite(audio.duration) && audio.duration > 0) {
+          done(Math.round(audio.duration));
+        }
       });
-      audio.src = URL.createObjectURL(blob);
+      audio.addEventListener("error", () => done(0));
+
+      // Fallback timeout — some formats never report duration in the browser
+      setTimeout(() => done(0), 3000);
+
+      audio.preload = "metadata";
+      audio.src = url;
     });
   }
 
@@ -118,26 +136,49 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
     clearRecording();
   }
 
-  // Upload recording from file
+  // Upload one or more recording files
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    // Validate file type — accept audio files and webm/ogg containers
     const validTypes = ["audio/", "video/webm", "video/ogg"];
-    if (!validTypes.some((t) => file.type.startsWith(t)) && !file.name.match(/\.(webm|ogg|mp3|wav|m4a|flac|opus|wma|aac)$/i)) {
-      setError("Unsupported format. Use webm, mp3, wav, m4a, ogg, or flac.");
-      return;
+    const validExtPattern = /\.(webm|ogg|mp3|wav|m4a|flac|opus|wma|aac)$/i;
+
+    // Collect and validate files
+    const files: File[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (!validTypes.some((t) => file.type.startsWith(t)) && !file.name.match(validExtPattern)) {
+        setError(`Unsupported format: ${file.name}`);
+        continue;
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        setError(`File too large: ${file.name} (max 50MB)`);
+        continue;
+      }
+      files.push(file);
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-      setError("File too large. Maximum 50MB.");
-      return;
-    }
+    if (files.length === 0) return;
 
-    const fileDuration = await getAudioDuration(file);
-    await saveRecording(file, { durationOverride: fileDuration }); // Server auto-queues transcription
-    // Reset input
+    // Sort by file's lastModified timestamp (chronological order)
+    files.sort((a, b) => a.lastModified - b.lastModified);
+
+    // Upload sequentially in order so transcriptions append chronologically
+    setSaving(true);
+    setError(null);
+    let uploaded = 0;
+    for (const file of files) {
+      try {
+        const fileDuration = await getAudioDuration(file);
+        await saveRecording(file, { durationOverride: fileDuration });
+        uploaded++;
+      } catch (err) {
+        console.error(`[Voice] Failed to upload ${file.name}:`, err);
+      }
+    }
+    setSaving(false);
+    if (uploaded > 1) toast.success(`${uploaded} recordings uploaded`);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -153,6 +194,7 @@ export function VoiceRecorder({ entryId, date, onTranscription, onRecordingSaved
             ref={fileInputRef}
             type="file"
             accept="audio/*,.webm,.ogg"
+            multiple
             className="hidden"
             onChange={handleUpload}
           />

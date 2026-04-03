@@ -15,7 +15,7 @@ async function getWhisperUrl(userId: string): Promise<string | null> {
 }
 
 async function tryTranscribe(baseUrl: string, fileBuffer: Buffer, filename: string): Promise<Response> {
-  const timeout = 5 * 60 * 1000;
+  const timeout = 10 * 60 * 1000;
   const uint8 = new Uint8Array(fileBuffer);
 
   const attempts = [
