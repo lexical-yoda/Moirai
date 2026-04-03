@@ -48,10 +48,10 @@ export function ProcessingStatus() {
     }
   }, []);
 
-  // Poll every 30s when closed, every 5s when open
+  // Poll every 10s when closed, every 3s when open
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, open ? 5_000 : 30_000);
+    const interval = setInterval(fetchStatus, open ? 3_000 : 10_000);
     return () => clearInterval(interval);
   }, [fetchStatus, open]);
 
@@ -86,7 +86,11 @@ export function ProcessingStatus() {
     setRetrying(null);
   }
 
-  const badgeCount = (data?.activeCount || 0) + (data?.failedCount || 0);
+  // Show badge for active + failed + recently completed (last 30s)
+  const recentlyCompleted = data?.tasks?.filter(
+    (t) => t.status === "completed" && new Date(t.updatedAt).getTime() > Date.now() - 30_000
+  )?.length || 0;
+  const badgeCount = (data?.activeCount || 0) + (data?.failedCount || 0) + (recentlyCompleted > 0 ? recentlyCompleted : 0);
 
   return (
     <div className="relative" ref={dropdownRef}>

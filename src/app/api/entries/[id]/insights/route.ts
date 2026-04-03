@@ -121,12 +121,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // Queue full AI pipeline to regenerate everything from corrected content
     const { queueEntryTasks, cancelPendingTasks, processQueue } = await import("@/lib/processing/runner");
-    cancelPendingTasks(session.user.id, id).catch(() => {});
+    await cancelPendingTasks(session.user.id, id);
     const freshEntry = await db.query.entries.findFirst({ where: eq(entries.id, id) });
     if (freshEntry?.content) {
-      queueEntryTasks(session.user.id, id, freshEntry.content)
-        .then(() => processQueue(session.user.id))
-        .catch((err) => console.error("[Processing]", err));
+      await queueEntryTasks(session.user.id, id, freshEntry.content);
+      // Fire-and-forget the processing itself, but tasks are now in DB
+      processQueue(session.user.id).catch((err) => console.error("[Processing]", err));
     }
 
     return NextResponse.json({ keyPeople: [], reprocessing: true });

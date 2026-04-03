@@ -480,7 +480,7 @@ export default function EntryPage() {
         }
         setInsight(null);
         setInsightLoading(true);
-        toast.success(`Renamed "${oldName}" to "${newName}" — re-processing entry`);
+        toast.success(`Renamed "${oldName}" to "${newName}" — check notification bell for progress`);
       } else {
         const errData = await res.json().catch(() => ({}));
         toast.error(errData.error || "Rename failed");
