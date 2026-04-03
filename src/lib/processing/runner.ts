@@ -309,12 +309,28 @@ async function handleFormatting(task: TaskRecord) {
   try {
     parsed = JSON.parse(formatResponse.content);
   } catch {
+    // Try extracting from code block
     const match = formatResponse.content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (match) {
-      parsed = JSON.parse(match[1]);
+      try {
+        parsed = JSON.parse(match[1]);
+      } catch {
+        parsed = { formatted: "", title: "" };
+      }
     } else {
-      console.error("[Processing] Formatting: no JSON in response:", formatResponse.content.slice(0, 300));
-      throw new Error("Failed to parse formatting response");
+      // Try to salvage truncated JSON — extract "formatted" value even if JSON is incomplete
+      const formattedMatch = formatResponse.content.match(/"formatted"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"title"|"\s*}|$)/);
+      const titleMatch = formatResponse.content.match(/"title"\s*:\s*"([^"]*?)"/);
+      if (formattedMatch) {
+        console.log("[Processing] Salvaged truncated formatting response");
+        parsed = {
+          formatted: formattedMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"'),
+          title: titleMatch?.[1] || "",
+        };
+      } else {
+        console.error("[Processing] Formatting: no JSON in response:", formatResponse.content.slice(0, 300));
+        throw new Error("Failed to parse formatting response");
+      }
     }
   }
 
